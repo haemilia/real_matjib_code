@@ -377,12 +377,12 @@ def cleanse_navermap_reviews(navermap_reviews:pd.DataFrame, cleansing:Dict[str, 
 
 #################################################### MAIN ##################################################################
 def main(restaurants_path = Path("G:/My Drive/Data/naver_search_results/mapogu_yeonnamdong_naver.json"),
-         restaurants_raw_path=Path("../dataset/seoul_mapogu_general_restaurants.xlsx"),
-         food_categories_path = Path("../dataset/naver_food_categories.json"),
+         restaurants_raw_path=Path("G:/My Drive/Data/naver_search_results/seoul_mapogu_general_restaurants.xlsx"),
+         food_categories_path = Path("G:/My Drive/Data/naver_search_results/naver_food_categories.json"),
          reviews_path = Path("G:/My Drive/Data/naver_search_results/mapogu_yeonnamdong_naver_reviews_final.pkl"),
-         navermap_reviews_final_path=Path("../dataset/navermap_reviews_final.parquet.gzip"),
-         navermap_reviews_final_backup_path=Path("G:/My Drive/Data/naver_search_results/navermap_reviews_final.parquet.gzip"),
-         restaurants_table_path = Path("../dataset/restaurants_table.parquet"),
+         navermap_reviews_final_path=Path("G:/My Drive/Data/naver_search_results/navermap_reviews.parquet"),
+         navermap_reviews_final_backup_path=Path("G:/My Drive/Data/naver_search_results/navermap_reviews.parquet"),
+         restaurants_table_path = Path("G:/My Drive/Data/naver_search_results/restaurants_table.parquet"),
          restaurants_table_backup_path = Path("G:/My Drive/Data/naver_search_results/restaurants_table.parquet"),
          REGION_OF_FOCUS="연남동"):
     
@@ -427,67 +427,12 @@ def main(restaurants_path = Path("G:/My Drive/Data/naver_search_results/mapogu_y
     # navermap_reviews_final_path:Path = DATASET_DIR / "navermap_reviews_final.parquet.gzip"
     # navermap_reviews_final_backup_path:Path = BACKUP_STORAGE_DIR / "navermap_reviews_final.parquet.gzip"
     print(f"Saving navermap reviews at {navermap_reviews_final_path}...")
-    navermap_reviews_final.to_parquet(navermap_reviews_final_path, compression="gzip")
-    navermap_reviews_final.to_parquet(navermap_reviews_final_backup_path, compression="gzip")
+    navermap_reviews_final.to_parquet(navermap_reviews_final_path)
+    navermap_reviews_final.to_parquet(navermap_reviews_final_backup_path)
 
 
 #%%
 if __name__ == "__main__":
     main()
 
-    # backup_storage_dir = Path('G:/My Drive/Data/naver_search_results')
-
-    # # Get restaurants data
-    # print("Getting restaurant data...")
-    # restaurants_path:Path = backup_storage_dir / "mapogu_yeonnamdong_naver.json"
-    # restaurants:dict = get_restaurants(restaurants_path)
-    # # Get reviews data
-    # print("Getting reviews data...")
-    # reviews_path:Path = backup_storage_dir / "mapogu_yeonnamdong_naver_reviews_final.pkl"
-    # reviews:dict = get_reviews(reviews_path)
-
-    # # Tabularise reviews
-    # print("Tabularise reviews...")
-    # navermap_reviews:pd.DataFrame = tabularise_navermap_reviews(restaurants, reviews)
-
-    # # Cleanse reviews
-    # print("Cleanse reviews...")
-    # cleansing:dict = get_cleansing()
-    # navermap_reviews_final:pd.DataFrame = cleanse_navermap_reviews(navermap_reviews, cleansing)
-
-    # # Save navermap_reviews_final
-    # dataset_dir:Path = Path("../dataset")
-    # navermap_reviews_final_path:Path = dataset_dir / "navermap_reviews_final.parquet.gzip"
-    # navermap_reviews_final_backup_path:Path = backup_storage_dir / "navermap_reviews_final.parquet.gzip"
-    # print(f"Saving navermap reviews at {navermap_reviews_final_path}...")
-    # navermap_reviews_final.to_parquet(navermap_reviews_final_path, compression="gzip")
-    # navermap_reviews_final.to_parquet(navermap_reviews_final_backup_path, compression="gzip")
-
-#%%
-# from pathlib import Path
-# import pickle
-# BACKUP_STORAGE_DIR= Path('G:/My Drive/Data/naver_search_results')
-# restaurants_path = BACKUP_STORAGE_DIR / "mapogu_yeonnamdong_naver_.pkl"
-# with open(restaurants_path, "rb") as rf:
-#     restaurants = pickle.load(rf)
-
-# restaurants_raw_path = Path("../dataset/seoul_mapogu_general_restaurants.xlsx")
-# rraw = get_restaurants_raw(restaurants_raw_path, focus_region="연남동")
-
-# restaurants_table = tabularise_navermap_restaurants(restaurants, 
-#                                                     rraw, 
-#                                                     filter_restaurants=True,
-#                                                     food_categories_path=Path("../dataset/naver_food_categories.json"))
-#%%
-
-# restaurants_path = Path("G:/My Drive/Data/naver_search_results/mapogu_yeonnamdong_naver.json")
-# restaurants_raw_path=Path("../dataset/seoul_mapogu_general_restaurants.xlsx")
-# food_categories_path = Path("../dataset/naver_food_categories.json")
-# reviews_path = Path("G:/My Drive/Data/naver_search_results/mapogu_yeonnamdong_naver_reviews_final.pkl")
-# navermap_reviews_final_path=Path("../dataset/navermap_reviews_final.parquet.gzip")
-# navermap_reviews_final_backup_path=Path("G:/My Drive/Data/naver_search_results/navermap_reviews_final.parquet.gzip")
-# restaurants_table_path = Path("../dataset/restaurants_table.parquet")
-# restaurants_table_backup_path = Path("G:/My Drive/Data/naver_search_results/restaurants_table.parquet")
-
-# reviews_table = pd.read_parquet(navermap_reviews_final_backup_path)
-# reviews_table
+# %%
