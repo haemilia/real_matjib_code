@@ -132,8 +132,11 @@ class TextPreprocessor(torch.nn.Module):
             truncation=True,
             return_tensors='pt'
         )
-        # Ensure outputs are long integers
-        return encoded['input_ids'].to(torch.long), encoded['attention_mask'].to(torch.long)
+
+        input_ids = encoded['input_ids'].to(self.target_device, dtype=torch.long)
+        attention_mask = encoded['attention_mask'].to(self.target_device, dtype=torch.long)
+
+        return input_ids, attention_mask
 
     def _tokenize_multi_tag_text(self, list_of_tag_lists: list[list[str]], max_tags: int, max_tag_length: int) -> tuple[torch.Tensor, torch.Tensor]:
         """
@@ -167,9 +170,10 @@ class TextPreprocessor(torch.nn.Module):
                         truncation=True,
                         return_tensors='pt'
                     )
-                    # Ensure outputs are long integers
-                    item_input_ids.append(encoded_tag['input_ids'].squeeze(0).to(torch.long))
-                    item_attention_masks.append(encoded_tag['attention_mask'].squeeze(0).to(torch.long))
+
+                    item_input_ids.append(encoded_tag['input_ids'].squeeze(0).to(self.target_device, dtype=torch.long))
+                    item_attention_masks.append(encoded_tag['attention_mask'].squeeze(0).to(self.target_device, dtype=torch.long))
+
 
             num_actual_tags = len(item_input_ids)
             if num_actual_tags < max_tags:
@@ -182,10 +186,11 @@ class TextPreprocessor(torch.nn.Module):
                     item_input_ids.append(padding_ids)
                     item_attention_masks.append(padding_mask)
 
-            batch_input_ids.append(torch.stack(item_input_ids).to(torch.long)) # Explicit conversion
-            batch_attention_masks.append(torch.stack(item_attention_masks).to(torch.long)) # Explicit conversion
-            
-        return torch.stack(batch_input_ids).to(torch.long), torch.stack(batch_attention_masks).to(torch.long)
+            batch_input_ids.append(torch.stack(item_input_ids).to(self.target_device, dtype=torch.long))
+            batch_attention_masks.append(torch.stack(item_attention_masks).to(self.target_device, dtype=torch.long))
+
+        return torch.stack(batch_input_ids).to(self.target_device, dtype=torch.long), \
+               torch.stack(batch_attention_masks).to(self.target_device, dtype=torch.long)
 
 
     def forward(self, raw_batch_data: dict) -> torch.Tensor|None:
@@ -218,7 +223,6 @@ class TextPreprocessor(torch.nn.Module):
 
         store_naver_name_emb = self.text_encoder(store_naver_name_input_ids, store_naver_name_attention_mask)
         
-        # FIX: Category embedding always needs mean pooling after encoding, since it's now multi-tag
         category_emb_raw = self.text_encoder(category_input_ids, category_attention_mask)
         category_emb = torch.mean(category_emb_raw, dim=1) # (batch_size, encoder_output_dim)
 

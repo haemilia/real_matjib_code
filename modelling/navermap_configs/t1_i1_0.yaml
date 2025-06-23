@@ -29,5 +29,5 @@ model_architecture:
 
 training:
   batch_size: 10
-  num_epochs: 1
+  num_epochs: 10
   learning_rate: 1.0e-5
