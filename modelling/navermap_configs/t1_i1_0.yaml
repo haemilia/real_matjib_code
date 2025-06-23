@@ -1,0 +1,33 @@
+text_preprocessing:
+  strategy: "option1_cross_attention_results" # Corresponds to "review_text + cross-attention results of others"
+  params:
+    tokenizer_model_name: "beomi/KcELECTRA-base"
+    text_encoder_max_len: 512
+    aux_text_max_len: 32
+    max_tags: 5
+    review_text_chunk_overlap: 50
+    # fusion_embed_dim is critical and should match model_architecture.fusion_embed_dim
+    fusion_embed_dim: 768
+    attention_heads: 4
+    dropout: 0.1 # Dropout for SimpleCrossAttention
+
+image_preprocessing:
+  strategy: "option1_global_mean_pool" # Corresponds to "global mean pool"
+  params:
+    clip_model_name: "openai/clip-vit-base-patch32"
+    max_images_per_sample: 5
+    target_image_size: [224, 224]
+    # fusion_embed_dim is critical and should match model_architecture.fusion_embed_dim
+    fusion_embed_dim: 768
+
+model_architecture:
+  fusion_embed_dim: 768
+  attention_heads: 4 # For InterModalAttention
+  attention_layers: 1 # For InterModalAttention
+  classifier_hidden_dim: 384 # fusion_embed_dim // 2
+  dropout: 0.1 # For InterModalAttention and ClassifierHead
+
+training:
+  batch_size: 10
+  num_epochs: 1
+  learning_rate: 1.0e-5
