@@ -1,85 +1,56 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-class SimpleCrossAttention(nn.Module):
-    """
-    A simplified cross-attention module designed for single-vector queries
-    attending to single or multi-vector keys/values.
-    It uses `nn.MultiheadAttention` internally.
-    """
-    def __init__(self, embed_dim, num_heads=4):
-        super().__init__()
-        self.embed_dim = embed_dim
-        self.num_heads = num_heads
-        # MultiheadAttention expects batch_first=True for (batch, seq_len, embed_dim)
-        self.attention = nn.MultiheadAttention(embed_dim, num_heads, batch_first=True)
+from navermap_preprocess import TextPreprocessor, ImagePreprocessor
+from navermap_utils import TabularEncoder
 
-    def forward(self, query_emb, key_value_emb):
-        """
-        Calculates attention where `query_emb` attends to `key_value_emb`.
-
-        Args:
-            query_emb (torch.Tensor): The query embedding, typically `review_text_emb`,
-                                      shape `(batch_size, embed_dim)`.
-            key_value_emb (torch.Tensor): The key/value embeddings, e.g., an auxiliary
-                                          text embedding, shape `(batch_size, N, embed_dim)`
-                                          where N is 1 for single auxiliary texts, or `max_tags`
-                                          for multi-tag auxiliary texts.
-
-        Returns:
-            torch.Tensor: The context vector, shape `(batch_size, embed_dim)`,
-                          representing the auxiliary features attended by the query.
-        """
-        # Unsqueeze query_emb to (batch_size, 1, embed_dim) to act as a sequence of length 1
-        query = query_emb.unsqueeze(1)
-
-        # key_value_emb is already shaped correctly for keys and values,
-        # e.g., (batch_size, 1, embed_dim) for single aux text, or (batch_size, num_tags, embed_dim)
-        key = key_value_emb
-        value = key_value_emb
-
-        # No key_padding_mask is used here, assuming padding within key_value_emb
-        # (e.g., for `max_tags`) is handled by the upstream encoder by outputting zero vectors,
-        # or by ensuring attention weights for zero vectors become zero.
-        # For simplicity in MultiheadAttention, we provide it as is.
-        attn_output, _ = self.attention(query, key, value)
-        
-        # attn_output shape is (batch_size, 1, embed_dim). Squeeze the sequence dimension.
-        return attn_output.squeeze(1)
-
-
+# --- InterModalAttention Module ---
 class InterModalAttention(nn.Module):
     """
     Applies self-attention to combined embeddings from different modalities
     (text, image, tabular) using a Transformer Encoder Layer.
     A learnable CLS token is prepended to capture the fused representation.
     """
-    def __init__(self, embed_dim, num_heads=4, num_layers=1, dropout=0.1):
+    def __init__(self, embed_dim: int, num_heads: int = 4, num_layers: int = 1, dropout: float = 0.1):
+        """
+        Initializes the InterModalAttention module.
+
+        Args:
+            embed_dim (int): The common embedding dimension for all modalities,
+                             and the dimension of the Transformer layers.
+            num_heads (int): Number of attention heads for MultiheadAttention.
+            num_layers (int): Number of TransformerEncoderLayers to stack.
+            dropout (float): Dropout rate.
+        """
         super().__init__()
+        
+        # Ensure embed_dim is divisible by num_heads
+        if embed_dim % num_heads != 0:
+            raise ValueError(f"embed_dim ({embed_dim}) must be divisible by num_heads ({num_heads})")
+
         # Define a single TransformerEncoderLayer
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model=embed_dim,          # Dimension of the input features
-            nhead=num_heads,            # Number of attention heads
-            dim_feedforward=embed_dim * 4, # Dimension of the feedforward network model
-            dropout=dropout,            # Dropout value
-            batch_first=True            # Input and output tensors are (batch_size, sequence_length, feature_dimension)
+            d_model=embed_dim,
+            nhead=num_heads,
+            dim_feedforward=embed_dim * 4, # Common practice: 4x d_model for feedforward
+            dropout=dropout,
+            batch_first=True # Input/output tensors will have batch dimension first
         )
+        
         # Stack multiple encoder layers if num_layers > 1
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers)
         self.embed_dim = embed_dim
 
         # A learnable 'CLS' token-like embedding to represent the aggregated features
-        # This token will be prepended to the sequence of modal embeddings before feeding to transformer
-        self.cls_token = nn.Parameter(torch.randn(1, 1, embed_dim))
+        # This token will attend to all modality embeddings and its output will be the fused representation.
+        self.cls_token = nn.Parameter(torch.randn(1, 1, embed_dim)) # Shape (1, 1, embed_dim)
 
-
-    def forward(self, text_emb, image_emb, tabular_emb):
+    def forward(self, text_emb: torch.Tensor, image_emb: torch.Tensor, tabular_emb: torch.Tensor) -> torch.Tensor:
         """
         Fuses embeddings from different modalities using self-attention.
 
         Args:
             text_emb (torch.Tensor): Fused text embedding, shape `(batch_size, embed_dim)`.
-            image_emb (torch.Tensor): Image embedding, shape `(batch_size, embed_dim)`.
+            image_emb (torch.Tensor): Fused image embedding, shape `(batch_size, embed_dim)`.
             tabular_emb (torch.Tensor): Tabular embedding, shape `(batch_size, embed_dim)`.
 
         Returns:
@@ -89,11 +60,15 @@ class InterModalAttention(nn.Module):
         batch_size = text_emb.shape[0]
 
         # Expand the learnable CLS token to match the batch size
+        # Shape: (batch_size, 1, embed_dim)
         cls_tokens = self.cls_token.expand(batch_size, -1, -1)
 
-        # Unsqueeze each modal embedding to add a sequence dimension (length 1)
-        # Then concatenate them along the sequence dimension
-        combined_embeddings = torch.cat([
+        # Unsqueeze each modality embedding to add a sequence dimension (length 1)
+        # Then concatenate them along the sequence dimension.
+        # The order of concatenation can influence performance if positional encodings were used,
+        # but for simple fusion of distinct modalities, it's less critical.
+        # We concatenate in a fixed order: [CLS, Text, Image, Tabular]
+        combined_embeddings_sequence = torch.cat([
             cls_tokens,            # (B, 1, E)
             text_emb.unsqueeze(1), # (B, 1, E)
             image_emb.unsqueeze(1),# (B, 1, E)
@@ -101,196 +76,166 @@ class InterModalAttention(nn.Module):
         ], dim=1) # Resulting shape: (batch_size, 1 + 3, embed_dim) = (batch_size, 4, embed_dim)
 
         # Pass the combined sequence through the transformer encoder
-        attended_output = self.transformer_encoder(combined_embeddings)
+        # This allows each modality and the CLS token to attend to all other elements.
+        attended_output = self.transformer_encoder(combined_embeddings_sequence)
 
-        # The output corresponding to the CLS token (the first token in the sequence)
-        # is taken as the final fused representation of all modalities.
-        return attended_output[:, 0, :] # Shape (batch_size, embed_dim)
+        # The final fused representation for the batch is typically taken from the
+        # output corresponding to the CLS token (the first token in the sequence).
+        fused_representation = attended_output[:, 0, :] # Shape (batch_size, embed_dim)
 
-
-class MultiModalClassifier(nn.Module):
+        return fused_representation
+    
+# --- Classifier Head Module ---
+class ClassifierHead(nn.Module):
     """
-    A comprehensive multi-modal classification model for binary prediction ('is_advert').
-    It integrates textual (main and auxiliary), image, and tabular features,
-    applying attention mechanisms at two stages:
-    1. Text-Auxiliary Text Attention
-    2. Inter-Modal Attention
-    Finally, a shallow MLP acts as the binary classifier head.
+    A simple two-layer MLP for binary classification.
     """
-    def __init__(self, text_model_name="beomi/KcELECTRA-base", clip_model_name="openai/clip-vit-base-patch32",
-                 tabular_input_dim=10, # Example, will be determined by DataLoader
-                 text_embed_dim=768,   # Default for KcELECTRA-base
-                 image_embed_dim=768,  # Default for CLIP-ViT-base-patch32
-                 tabular_output_dim=256, # Output dimension for tabular encoder
-                 fusion_embed_dim=768, # Common dimension for inter-modal attention
-                 attention_heads=4,
-                 attention_layers=1,
-                 dropout=0.1):
+    def __init__(self, input_dim: int, hidden_dim: int, output_dim: int = 1, dropout: float = 0.1):
+        """
+        Initializes the ClassifierHead.
+
+        Args:
+            input_dim (int): The dimension of the input feature vector (e.g., fusion_embed_dim).
+            hidden_dim (int): The dimension of the hidden layer.
+            output_dim (int): The dimension of the output (1 for binary classification).
+            dropout (float): Dropout rate for regularization.
+        """
+        super().__init__()
+
+        self.fc1 = nn.Linear(input_dim, hidden_dim)
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(dropout)
+        self.fc2 = nn.Linear(hidden_dim, output_dim) # Output 1 for binary classification (logits)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass through the classifier head.
+
+        Args:
+            x (torch.Tensor): The input feature vector (e.g., fused multi-modal embedding),
+                              shape `(batch_size, input_dim)`.
+
+        Returns:
+            torch.Tensor: The raw logits for binary classification,
+                          shape `(batch_size, output_dim)`.
+        """
+        x = self.fc1(x)
+        x = self.relu(x)
+        x = self.dropout(x)
+        logits = self.fc2(x) # Raw logits, no sigmoid here. Sigmoid will be applied with BCELossWithLogits or later.
+        return logits
+    
+    #################################### MAIN MODEL #################################################################################
+class NaverMapModel(nn.Module):
+    """
+    The main multi-modal classification model for binary prediction ('is_advert').
+    It orchestrates the entire data flow from raw inputs through preprocessors,
+    encoders, inter-modal attention, and a classifier head.
+    """
+    def __init__(self, config: dict, tabular_input_dim: int):
         """
         Initializes the MultiModalClassifier.
 
         Args:
-            text_model_name (str): Name of the pre-trained text model.
-            clip_model_name (str): Name of the pre-trained CLIP model.
-            tabular_input_dim (int): Input dimension for the tabular encoder.
-            text_embed_dim (int): Expected output dimension of the text encoder.
-            image_embed_dim (int): Expected output dimension of the image encoder.
-            tabular_output_dim (int): Output dimension of the tabular encoder.
-            fusion_embed_dim (int): Common embedding dimension for all modalities
-                                    before inter-modal attention. Projection layers
-                                    will align embeddings to this size.
-            attention_heads (int): Number of attention heads for MultiheadAttention.
-            attention_layers (int): Number of TransformerEncoderLayers in inter-modal attention.
-            dropout (float): Dropout rate.
+            config (dict): A dictionary containing all configuration parameters
+                           for text_preprocessing, image_preprocessing, and model_architecture.
+            tabular_input_dim (int): The number of features in the raw tabular data.
         """
         super().__init__()
+        
+        # Extract configurations for different parts of the model
+        text_config = config.get('text_preprocessing', {})
+        image_config = config.get('image_preprocessing', {})
+        model_arch_config = config.get('model_architecture', {})
 
-        # --- 1. Feature Encoders ---
-        self.text_encoder = BaseKcELECTRAEncoder(model_name=text_model_name)
-        self.image_encoder = CLIPImageEncoder(model_name=clip_model_name)
-        self.tabular_encoder = TabularEncoder(input_dim=tabular_input_dim, output_dim=tabular_output_dim)
+        # Ensure fusion_embed_dim is consistent across modules that use it
+        self.fusion_embed_dim = model_arch_config.get("fusion_embed_dim", 768)
+        # Pass fusion_embed_dim to preprocessor configs as well, as they need it for their final projections
+        text_config['params']['fusion_embed_dim'] = self.fusion_embed_dim
+        image_config['params']['fusion_embed_dim'] = self.fusion_embed_dim
 
-        # Ensure that the actual embedding dimensions match the expected ones,
-        # otherwise, add assertion or projection layers here if they differ.
-        # For this setup, we assume text_encoder.embedding_dim and image_encoder.embedding_dim
-        # are consistent with their defaults (768).
 
-        # Projection layers to align all encoder outputs to the `fusion_embed_dim`
-        # for consistent input to attention layers.
-        self.proj_review_text = nn.Linear(text_embed_dim, fusion_embed_dim)
-        self.proj_store_naver_name = nn.Linear(text_embed_dim, fusion_embed_dim)
-        self.proj_visit_keywords = nn.Linear(text_embed_dim, fusion_embed_dim)
-        self.proj_keyword_tags_hangul = nn.Linear(text_embed_dim, fusion_embed_dim)
-        self.proj_category = nn.Linear(text_embed_dim, fusion_embed_dim)
-        self.proj_image = nn.Linear(image_embed_dim, fusion_embed_dim)
-        self.proj_tabular = nn.Linear(tabular_output_dim, fusion_embed_dim) # Project tabular to fusion dim
+        # --- Instantiate Preprocessors ---
+        # These handle raw data to feature vectors for each modality
+        self.text_preprocessor = TextPreprocessor(text_config)
+        self.image_preprocessor = ImagePreprocessor(image_config)
+        
+        # --- Instantiate Tabular Encoder ---
+        # Note: tabular_output_dim should ideally be fusion_embed_dim for inter-modal attention
+        self.tabular_encoder = TabularEncoder(
+            input_dim=tabular_input_dim,
+            output_dim=self.fusion_embed_dim # Ensure tabular output matches fusion_embed_dim
+        )
 
-        # --- 2. Attention Layer 1: Text-Auxiliary Text Attention ---
-        # Each auxiliary text embedding will be processed by a cross-attention layer
-        # where the main review text embedding acts as the query.
-        self.attention_store_naver_name = SimpleCrossAttention(fusion_embed_dim, num_heads=attention_heads)
-        self.attention_visit_keywords = SimpleCrossAttention(fusion_embed_dim, num_heads=attention_heads)
-        self.attention_keyword_tags_hangul = SimpleCrossAttention(fusion_embed_dim, num_heads=attention_heads)
-        self.attention_category = SimpleCrossAttention(fusion_embed_dim, num_heads=attention_heads)
-
-        # A final projection layer to combine all text features into a single vector
-        # 5 * fusion_embed_dim because we concatenate review_text_proj and 4 attended aux features.
-        self.proj_combined_text_features = nn.Linear(5 * fusion_embed_dim, fusion_embed_dim)
-
-        # --- 3. Attention Layer 2: Inter-Modal Attention ---
-        # This layer fuses the processed text features, image features, and tabular features.
+        # --- Instantiate Inter-Modal Attention ---
+        # This module fuses the outputs from text, image, and tabular encoders
         self.inter_modal_attention = InterModalAttention(
-            embed_dim=fusion_embed_dim,
-            num_heads=attention_heads,
-            num_layers=attention_layers,
-            dropout=dropout
+            embed_dim=self.fusion_embed_dim,
+            num_heads=model_arch_config.get("attention_heads", 4),
+            num_layers=model_arch_config.get("attention_layers", 1),
+            dropout=model_arch_config.get("dropout", 0.1)
         )
 
-        # --- 4. Classifier Head ---
-        # A shallow MLP for binary classification on the final fused features.
-        self.classifier = nn.Sequential(
-            nn.Linear(fusion_embed_dim, fusion_embed_dim // 2), # Reduce dimension
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(fusion_embed_dim // 2, 1), # Output a single logit for binary classification
-            nn.Sigmoid() # Apply sigmoid to get a probability between 0 and 1
+        # --- Instantiate Classifier Head ---
+        # This takes the fused multi-modal embedding and outputs logits
+        self.classifier_head = ClassifierHead(
+            input_dim=self.fusion_embed_dim,
+            hidden_dim=model_arch_config.get("classifier_hidden_dim", self.fusion_embed_dim // 2),
+            output_dim=1, # Binary classification
+            dropout=model_arch_config.get("dropout", 0.1)
         )
 
-        self.fusion_embed_dim = fusion_embed_dim # Store for potential external use
-
-
-    def forward(self,
-                review_input_ids, review_attention_mask,
-                store_naver_name_input_ids, store_naver_name_attention_mask,
-                visit_keywords_input_ids, visit_keywords_attention_mask,
-                keyword_tags_hangul_input_ids, keyword_tags_hangul_attention_mask,
-                category_input_ids, category_attention_mask,
-                image_pixel_values, image_attention_mask,
-                tabular_data):
+    def forward(self, raw_batch_data: dict) -> torch.Tensor:
         """
         Forward pass through the multi-modal classifier.
 
         Args:
-            All input tensors as prepared by the ReviewDataset and DataLoader.
-            Shapes:
-            - review_input_ids: (batch_size, max_text_len)
-            - review_attention_mask: (batch_size, max_text_len)
-            - store_naver_name_input_ids: (batch_size, max_tag_len)
-            - store_naver_name_attention_mask: (batch_size, max_tag_len)
-            - visit_keywords_input_ids: (batch_size, max_tags, max_tag_len)
-            - visit_keywords_attention_mask: (batch_size, max_tags, max_tag_len)
-            - keyword_tags_hangul_input_ids: (batch_size, max_tags, max_tag_len)
-            - keyword_tags_hangul_attention_mask: (batch_size, max_tags, max_tag_len)
-            - category_input_ids: (batch_size, max_tag_len)
-            - category_attention_mask: (batch_size, max_tag_len)
-            - image_pixel_values: (batch_size, max_images, C, H, W)
-            - image_attention_mask: (batch_size, max_images)
-            - tabular_data: (batch_size, tabular_input_dim)
+            raw_batch_data (dict): A dictionary containing raw inputs for the batch,
+                                   as produced by `custom_collate_fn`.
+                                   Expected keys: 'review_text', 'store_naver_name',
+                                   'visit_keywords', 'keyword_tags_hangul', 'category',
+                                   'image_links', 'video_thumbnail_links' (optional),
+                                   'tabular_data'.
 
         Returns:
-            torch.Tensor: Binary classification probabilities, shape `(batch_size, 1)`.
+            torch.Tensor: Raw logits for binary classification, shape `(batch_size, 1)`.
         """
-        # --- 1. Feature Extraction ---
-        # Text encoders output (batch_size, embed_dim) or (batch_size, N_tags, embed_dim)
-        review_emb = self.text_encoder(review_input_ids, review_attention_mask)
-        store_naver_name_emb = self.text_encoder(store_naver_name_input_ids, store_naver_name_attention_mask)
-        visit_keywords_emb = self.text_encoder(visit_keywords_input_ids, visit_keywords_attention_mask)
-        keyword_tags_hangul_emb = self.text_encoder(keyword_tags_hangul_input_ids, keyword_tags_hangul_attention_mask)
-        category_emb = self.text_encoder(category_input_ids, category_attention_mask)
+        # --- 1. Preprocessing and Feature Extraction per Modality ---
+        # Text Modality
+        # TextPreprocessor handles cleaning, tokenization, chunking, and fusion of all text types.
+        try:
+            text_fused_embedding = self.text_preprocessor(raw_batch_data) # (batch_size, fusion_embed_dim)
+        except Exception as e:
+            print("Something went wrong during text_preprocessor")
+            raise e
 
-        # Image encoder output (batch_size, embed_dim)
-        image_emb = self.image_encoder(image_pixel_values, image_attention_mask)
-        
-        # Tabular encoder output (batch_size, tabular_output_dim)
-        tabular_emb = self.tabular_encoder(tabular_data)
+        # Image Modality
+        # ImagePreprocessor handles loading, CLIP processing, and fusion of all image types.
+        try:
+            image_fused_embedding = self.image_preprocessor(raw_batch_data) # (batch_size, fusion_embed_dim)
+        except Exception as e:
+            print("Something went wrong during image_preprocessor")
+            raise e
 
-        # --- Project all embeddings to a common dimension (`fusion_embed_dim`) ---
-        review_emb_proj = self.proj_review_text(review_emb)
-        store_naver_name_emb_proj = self.proj_store_naver_name(store_naver_name_emb)
-        visit_keywords_emb_proj = self.proj_visit_keywords(visit_keywords_emb)
-        keyword_tags_hangul_emb_proj = self.proj_keyword_tags_hangul(keyword_tags_hangul_emb)
-        category_emb_proj = self.proj_category(category_emb)
+        # Tabular Modality
+        # TabularEncoder handles the raw tabular data
+        # Ensure tabular data is on the correct device (Preprocessors handle their own device placement via models)
+        tabular_data_tensor = raw_batch_data['tabular_data'].to(text_fused_embedding.device)
+        tabular_embedding = self.tabular_encoder(tabular_data_tensor) # (batch_size, fusion_embed_dim)
 
-        image_emb_proj = self.proj_image(image_emb)
-        tabular_emb_proj = self.proj_tabular(tabular_emb)
+        # --- 2. Inter-Modal Attention / Fusion ---
+        # Fuses the processed embeddings from text, image, and tabular modalities
+        fused_multi_modal_features = self.inter_modal_attention(
+            text_fused_embedding,
+            image_fused_embedding,
+            tabular_embedding
+        ) # (batch_size, fusion_embed_dim)
 
-
-        # --- 2. Attention Layer 1: Text-Auxiliary Text Attention ---
-        # `review_emb_proj` acts as the query for each auxiliary text type.
-        # The output of each `SimpleCrossAttention` is the attended auxiliary embedding.
-        # Note: `unsqueeze(1)` is applied for single-item auxiliary text embeddings
-        # to match the (batch_size, seq_len, embed_dim) expectation of MultiheadAttention
-        # where seq_len for these is 1. Multi-item auxiliary texts (keywords, tags) are already (B, N, E).
-        
-        attended_store_naver_name_emb = self.attention_store_naver_name(review_emb_proj, store_naver_name_emb_proj.unsqueeze(1))
-        attended_visit_keywords_emb = self.attention_visit_keywords(review_emb_proj, visit_keywords_emb_proj)
-        attended_keyword_tags_hangul_emb = self.attention_keyword_tags_hangul(review_emb_proj, keyword_tags_hangul_emb_proj)
-        attended_category_emb = self.attention_category(review_emb_proj, category_emb_proj.unsqueeze(1))
-
-        # Combine all processed text features (main review + 4 attended auxiliary texts)
-        # Concatenate them along the feature dimension.
-        combined_text_features_raw = torch.cat([
-            review_emb_proj,
-            attended_store_naver_name_emb,
-            attended_visit_keywords_emb,
-            attended_keyword_tags_hangul_emb,
-            attended_category_emb
-        ], dim=-1) # Shape: (batch_size, 5 * fusion_embed_dim)
-
-        # Project the concatenated text features back to `fusion_embed_dim`
-        final_text_emb = self.proj_combined_text_features(combined_text_features_raw)
-
-
-        # --- 3. Attention Layer 2: Inter-Modal Attention ---
-        # Fuses the `final_text_emb`, `image_emb_proj`, and `tabular_emb_proj`
-        fused_features = self.inter_modal_attention(
-            final_text_emb,
-            image_emb_proj,
-            tabular_emb_proj
-        ) # Output shape: (batch_size, fusion_embed_dim)
-
-        # --- 4. Classifier Head ---
-        # Pass the final fused features through the shallow MLP classifier.
-        logits = self.classifier(fused_features) # Output shape: (batch_size, 1)
+        # --- 3. Classifier Head ---
+        # Outputs raw logits for binary classification
+        logits = self.classifier_head(fused_multi_modal_features) # (batch_size, 1)
 
         return logits
+    
+if __name__ == '__main__':
+    pass
