@@ -39,8 +39,8 @@ class NavermapReviewDataset(Dataset):
             'category': 'list_of_strings' # <-- IMPORTANT FIX: Changed to 'list_of_strings' based on sample data
         }
         self.image_link_cols = {
-            'image_links': 'list_of_strings' # Correctly identified as list_of_strings
-            # 'video_thumbnail_links': 'list_of_strings' # Add if you have this column
+            'image_links': 'list_of_strings', # Correctly identified as list_of_strings
+            'video_thumbnail_links': 'list_of_strings' # Add if you have this column
         }
         self.tabular_numerical_cols = [
             'num_of_media', 'visit_count', 'author_total_reviews',

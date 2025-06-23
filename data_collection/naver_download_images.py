@@ -8,6 +8,7 @@ import re
 from PIL import Image 
 from io import BytesIO
 from tqdm import tqdm
+import zipfile
 from typing import Dict, List
 
 def download_image(image_url: str, destination_directory: Path, base_filename: str | None = None) -> Path:
@@ -173,7 +174,7 @@ def convert_dir_to_blog_url(dir:str):
 
 def download_images_in_dataset_only(dataset_path:Path, import_columnnames:Dict[str, List[str]],
                                     imagedir = Path(__file__).parent.parent.parent / "images",
-                                    datadir=Path("G:/My Drive/Data/naver_search_results/")):
+                                    output_datadir=Path("G:/My Drive/Data/naver_search_results/")):
     # Access the columns containing image urls  + other necessary information from dataset parquet file
     review_id_name = import_columnnames["id"]
     image_col_names = import_columnnames["images"]
@@ -184,9 +185,8 @@ def download_images_in_dataset_only(dataset_path:Path, import_columnnames:Dict[s
                               columns = importcols)
     dataset_name = dataset_path.stem
     dataset_image_paths:Dict[str, dict] = dict()
-    all_dataset = len(dataset)
-    for all_i, row in tqdm(dataset.iterrows()):
-        print(f"{all_i}/{all_dataset-1}")
+
+    for _, row in tqdm(dataset.iterrows()):
         review_id = str(row[review_id_name[0]])
         dataset_image_paths[review_id] = {}
         destination_dir = imagedir / review_id
@@ -194,16 +194,42 @@ def download_images_in_dataset_only(dataset_path:Path, import_columnnames:Dict[s
             dataset_image_paths[review_id][image_col] = []
             img_list = row[image_col]
             if img_list is not None and len(img_list) > 0:
-                len_img = len(img_list)
                 for i, img_url in enumerate(img_list):
                     base_filename = f"{review_id}_{image_col}_{i}"
-                    to_path = download_image(image_url=img_url,
+                    downloaded_path = download_image(image_url=img_url,
                                              destination_directory=destination_dir,
                                              base_filename=base_filename)
-                    dataset_image_paths[review_id][image_col].append(to_path)
-                    print(f"{i+1}/{len_img}: Downloaded to {to_path}")
-    with open(datadir/f"{dataset_name}_local_image_paths.pkl", "wb") as wf:
-        pickle.dump(dataset_image_paths, wf)
+                    if downloaded_path.is_file():
+                        relative_path = downloaded_path.relative_to(imagedir)
+                        dataset_image_paths[review_id][image_col].append(relative_path.as_posix())
+                    else:
+                        print(f"Failed to download: {img_url} at {i}th image of {image_col} for {review_id}")
+
+    output_datadir.mkdir(parents=True, exist_ok=True)
+    metadata_path = output_datadir / f"{dataset_name}_local_image_paths.pickle"
+    try:
+        with open(metadata_path, "wb") as wf:
+            pickle.dump(dataset_image_paths, wf)
+        print(f"Image paths metadata saved as Pickle: {metadata_path.resolve()}")
+    except Exception as e:
+        print(f"Error saving metadata: {e}")
+
+    zip_archive_path = output_datadir / f"{dataset_name}_images.zip"
+    try:
+        print(f"Creating zip archive of '{imagedir.name}' at: {zip_archive_path.resolve()}")
+        with zipfile.ZipFile(zip_archive_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for entry in imagedir.rglob('*'): # Recursively get all files/dirs in imagedir
+                if entry.is_file():
+                    # Calculate path relative to the imagedir for the archive name
+                    arcname = entry.relative_to(imagedir)
+                    zf.write(entry, arcname)
+        print(f"Image archive created: {zip_archive_path.resolve()}")
+    except Exception as e:
+        print(f"Error creating zip archive: {e}")
+        # Optionally, clean up partially created zip file if error occurred
+        if zip_archive_path.exists():
+            zip_archive_path.unlink()
+
     
     
 
@@ -216,8 +242,7 @@ def main(datadir_path=Path("G:/My Drive/Data/naver_search_results/"),
                                        columns=["review_id", "image_links", "video_thumbnail_links"])
     map_imagedir = imagedir / "map"
     map_image_paths = {}
-    for all_i, map_series in tqdm(navermap_reviews.iterrows()):
-        print(f"{all_i+1}/ {len(navermap_reviews)}")
+    for _, map_series in tqdm(navermap_reviews.iterrows()):
         review_id = map_series["review_id"]
         map_image_paths[review_id] = {}
         map_image_paths[review_id]["image"] = []
@@ -250,10 +275,8 @@ def main(datadir_path=Path("G:/My Drive/Data/naver_search_results/"),
     naverblog_reviews = pd.read_parquet(naverblog_reviews_path, 
                                         engine="pyarrow",
                                         columns = ["post_url", "img_url", "sticker_url", "vid_thumb_url"])
-    blog_len = len(naverblog_reviews)
     blog_image_paths = {}
     for all_i, blog_series in tqdm(naverblog_reviews.iterrows()):
-        print(f"{all_i + 1}/{blog_len}")
         blog_url = blog_series["post_url"]
         blog_image_paths[blog_url] = {}
         blog_image_paths[blog_url]["image"] = []
@@ -302,5 +325,5 @@ if __name__ == "__main__":
         "id": ["review_id"],
         "images": ["image_links", "video_thumbnail_links"]
     }
-    download_images_in_dataset_only(datadir_path/"navermap_reviews_labelled_only.parquet",
+    download_images_in_dataset_only(dataset_path=datadir_path/"navermap_reviews_labelled_only.parquet",
                                     import_columnnames=import_columnnames)
