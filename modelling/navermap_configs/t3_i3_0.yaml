@@ -1,7 +1,7 @@
 text_preprocessing:
-  strategy: "option2_mean_pooling_others" 
+  strategy: "option3_cross_attention_mean_pool" 
   params:
-    tokenizer_model_name: "beomi/KcELECTRA-base"
+    tokenizer_model_name: "monologg/koelectra-small-discriminator"
     text_encoder_max_len: 512
     aux_text_max_len: 32
     max_tags: 5
@@ -12,7 +12,7 @@ text_preprocessing:
     dropout: 0.1 # Dropout for SimpleCrossAttention
 
 image_preprocessing:
-  strategy: "option2_variable_wise_mean_pool" 
+  strategy: "option3_global_max_pool" 
   params:
     clip_model_name: "openai/clip-vit-base-patch32"
     max_images_per_sample: 5
@@ -29,5 +29,5 @@ model_architecture:
 
 training:
   batch_size: 10
-  num_epochs: 10
+  num_epochs: 20
   learning_rate: 1.0e-5

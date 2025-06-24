@@ -12,7 +12,7 @@ text_preprocessing:
     dropout: 0.1 # Dropout for SimpleCrossAttention
 
 image_preprocessing:
-  strategy: "option1_global_mean_pool" # Corresponds to "global mean pool"
+  strategy: "option3_global_max_pool"
   params:
     clip_model_name: "openai/clip-vit-base-patch32"
     max_images_per_sample: 5

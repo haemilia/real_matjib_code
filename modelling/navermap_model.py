@@ -22,7 +22,7 @@ class InterModalAttention(nn.Module):
             dropout (float): Dropout rate.
         """
         super().__init__()
-        
+
         # Ensure embed_dim is divisible by num_heads
         if embed_dim % num_heads != 0:
             raise ValueError(f"embed_dim ({embed_dim}) must be divisible by num_heads ({num_heads})")
@@ -35,7 +35,7 @@ class InterModalAttention(nn.Module):
             dropout=dropout,
             batch_first=True # Input/output tensors will have batch dimension first
         )
-        
+
         # Stack multiple encoder layers if num_layers > 1
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers)
         self.embed_dim = embed_dim
@@ -84,7 +84,7 @@ class InterModalAttention(nn.Module):
         fused_representation = attended_output[:, 0, :] # Shape (batch_size, embed_dim)
 
         return fused_representation
-    
+
 # --- Classifier Head Module ---
 class ClassifierHead(nn.Module):
     """
@@ -124,7 +124,7 @@ class ClassifierHead(nn.Module):
         x = self.dropout(x)
         logits = self.fc2(x) # Raw logits, no sigmoid here. Sigmoid will be applied with BCELossWithLogits or later.
         return logits
-    
+
     #################################### MAIN MODEL #################################################################################
 class NaverMapModel(nn.Module):
     """
@@ -132,7 +132,7 @@ class NaverMapModel(nn.Module):
     It orchestrates the entire data flow from raw inputs through preprocessors,
     encoders, inter-modal attention, and a classifier head.
     """
-    def __init__(self, config: dict, tabular_input_dim: int):
+    def __init__(self, config: dict, tabular_input_dim: int, device):
         """
         Initializes the MultiModalClassifier.
 
@@ -142,7 +142,8 @@ class NaverMapModel(nn.Module):
             tabular_input_dim (int): The number of features in the raw tabular data.
         """
         super().__init__()
-        
+        self.device = device
+
         # Extract configurations for different parts of the model
         text_config = config.get('text_preprocessing', {})
         image_config = config.get('image_preprocessing', {})
@@ -157,9 +158,9 @@ class NaverMapModel(nn.Module):
 
         # --- Instantiate Preprocessors ---
         # These handle raw data to feature vectors for each modality
-        self.text_preprocessor = TextPreprocessor(text_config)
-        self.image_preprocessor = ImagePreprocessor(image_config)
-        
+        self.text_preprocessor = TextPreprocessor(text_config, self.device)
+        self.image_preprocessor = ImagePreprocessor(image_config, self.device)
+
         # --- Instantiate Tabular Encoder ---
         # Note: tabular_output_dim should ideally be fusion_embed_dim for inter-modal attention
         self.tabular_encoder = TabularEncoder(
@@ -236,6 +237,3 @@ class NaverMapModel(nn.Module):
         logits = self.classifier_head(fused_multi_modal_features) # (batch_size, 1)
 
         return logits
-    
-if __name__ == '__main__':
-    pass

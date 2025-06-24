@@ -2,6 +2,7 @@
 import pandas as pd
 import numpy as np
 from pathlib import Path
+from typing import Dict
 import yaml
 import pickle
 from navermap_utils import NavermapReviewDataset, custom_collate_fn
@@ -18,7 +19,18 @@ from tqdm.auto import tqdm # For nice progress bars
 WANDB_PROJECT_NAME = "navermap-review-classification"
 WANDB_ENTITY = "haemilia-"
 
-def get_final_training_dataset(datadir_path=Path("G:/My Drive/Data/naver_search_results/")):
+# --- configuration ---
+DATADIR = Path("/content/drive/MyDrive/CV_training/real_matjib_colab")
+
+def re_root_path(img_paths:dict, root_dir:Path):
+    new_img_paths:Dict[str, Dict] = {}
+    for review_id, img_dict in img_paths.items():
+        new_img_paths[review_id] = {}
+        for img_type, img_path_list in img_dict.items():
+            new_img_paths[review_id][img_type] = list(map(lambda x: root_dir / x, img_path_list))
+    return new_img_paths
+
+def get_final_training_dataset(datadir_path=DATADIR):
     labelled = pd.read_parquet(datadir_path / "navermap_reviews_labelled_only.parquet",
                             engine="pyarrow")
     restaurants = pd.read_parquet(datadir_path / "restaurants_table.parquet",
@@ -27,11 +39,10 @@ def get_final_training_dataset(datadir_path=Path("G:/My Drive/Data/naver_search_
     with_category = pd.merge(labelled, restaurants,
             left_on="store_id", right_on="naver_store_id", how="left")
     with_category.drop(columns=["naver_store_id"], inplace=True)
-    datadir_path=Path("G:/My Drive/Data/naver_search_results/")
-    img_paths_path = datadir_path / "navermap_reviews_labelled_only_local_image_paths.pkl"
-    with open(img_paths_path, "rb") as rf:
+    with open(datadir_path / "navermap_reviews_labelled_only_local_image_paths.pickle", "rb") as rf:
         img_paths = pickle.load(rf)
-    img_df = pd.DataFrame(img_paths).T.reset_index(names="review_id")
+    rerooted = re_root_path(img_paths, Path("/content/navermap_reviews_labelled_only_images"))
+    img_df = pd.DataFrame(rerooted).T.reset_index(names="review_id")
     dropped_df = with_category.drop(columns=["image_links", "video_thumbnail_links"])
     result = pd.merge(dropped_df, img_df, on="review_id")
 
@@ -46,10 +57,10 @@ def get_final_training_dataset(datadir_path=Path("G:/My Drive/Data/naver_search_
                 lambda x: [str(item) for item in x] if isinstance(x, list) else (str(x) if isinstance(x, Path) else x)
             )
     test_df.to_parquet(datadir_path / "navermap_reviews_test.parquet")
-    
+
     return train_df
 
-def get_sample_training_dataset(datadir_path=Path("G:/My Drive/Data/naver_search_results/")):
+def get_sample_training_dataset(datadir_path=DATADIR):
     df = get_final_training_dataset(datadir_path)
     sampled = df.sample(10, random_state=24)
     return sampled
@@ -66,7 +77,7 @@ def train_epoch(model, dataloader, optimizer, criterion, device):
                 inputs[key] = value.to(device)
             else: # Keep lists of strings/paths on CPU for preprocessors
                 inputs[key] = value
-        
+
         labels = inputs.pop('labels') # Labels must be a separate tensor
 
         optimizer.zero_grad() # Zero gradients for each batch
@@ -87,7 +98,7 @@ def evaluate_epoch(model, dataloader, criterion, device):
     all_predictions = []
     all_probabilities = []
     all_labels = []
-    
+
     misclassified_samples_data = []
 
     with torch.no_grad():
@@ -136,7 +147,7 @@ def evaluate_epoch(model, dataloader, criterion, device):
     all_labels_np = np.array(all_labels)
 
     accuracy = np.mean(all_predictions_np == all_labels_np)
-    
+
     if len(np.unique(all_labels_np)) < 2:
         precision = np.nan
         recall = np.nan
@@ -153,8 +164,11 @@ def evaluate_epoch(model, dataloader, criterion, device):
 
     return avg_loss, accuracy, precision, recall, f1, roc_auc, pr_auc, misclassified_samples_data
 
+# Somewhere to save the resulting model
+MODEL_SAVE_DIR = DATADIR / "saved_models"
+MODEL_SAVE_DIR.mkdir(exist_ok=True)
 
-def main(path_to_configs=Path(__file__).parent / "navermap_configs"):
+def main(path_to_configs=DATADIR / "navermap_configs"):
     config_files_to_run = []
 
     if path_to_configs.is_file() and path_to_configs.suffix in ['.yaml', '.yml']:
@@ -176,9 +190,11 @@ def main(path_to_configs=Path(__file__).parent / "navermap_configs"):
 
     # Load and split dataset
     df = get_final_training_dataset() # Using sample for initial testing
-    
+
     # Split data into training and validation sets
     train_df, val_df = train_test_split(df, test_size=0.2, stratify=df['is_advert'])
+
+
 
     for config_path in config_files_to_run:
         print(f"\n--- Starting experiment with configuration: {config_path.name} ---")
@@ -192,15 +208,15 @@ def main(path_to_configs=Path(__file__).parent / "navermap_configs"):
         with wandb.init(project=WANDB_PROJECT_NAME, entity=WANDB_ENTITY, config=config, name=run_name):
             if wandb.run is not None:
                 print(f"WandB run initialized: {wandb.run.name}")
-            
+
             train_dataset = NavermapReviewDataset(train_df)
             val_dataset = NavermapReviewDataset(val_df)
-            
+
             # Get tabular input dimension (should be consistent for both datasets)
             tabular_input_dim = len(train_dataset.get_tabular_columns())
-            
+
             batch_size = config['training'].get('batch_size', 4) # Get batch size from config or default
-            
+
             train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, collate_fn=custom_collate_fn, num_workers=0)
             val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, collate_fn=custom_collate_fn, num_workers=0)
 
@@ -209,7 +225,7 @@ def main(path_to_configs=Path(__file__).parent / "navermap_configs"):
             print(f"\nUsing device: {device}")
 
             # Initialize the NaverMapModel
-            model = NaverMapModel(config, tabular_input_dim=tabular_input_dim).to(device)
+            model = NaverMapModel(config, tabular_input_dim=tabular_input_dim, device=device).to(device)
             print("\nNaverMapmodel initialized successfully.")
 
         # --- Training Setup ---
@@ -221,6 +237,13 @@ def main(path_to_configs=Path(__file__).parent / "navermap_configs"):
             num_epochs = config['training'].get('num_epochs', 5) # Number of training epochs
 
             misclassified_data_for_logging = [] # To store misclassified samples from the last epoch
+
+            # --- Initialize best F1 score for this run ---
+            best_val_f1 = -1.0
+            best_epoch = -1
+            # Define the fixed filename for the best model for this config
+            best_model_filename = f"{run_name}_best_model.pth"
+            best_model_save_path_for_config = MODEL_SAVE_DIR / best_model_filename
 
             print(f"\n--- Starting Training for {num_epochs} Epochs ---")
             for epoch in range(num_epochs):
@@ -251,19 +274,40 @@ def main(path_to_configs=Path(__file__).parent / "navermap_configs"):
                     "train_loss": train_loss,
                     "val_loss": val_loss,
                     "val_accuracy": val_accuracy,
-                    "val_precision": val_precision, 
-                    "val_recall": val_recall,       
-                    "val_f1": val_f1,               
-                    "val_roc_auc": val_roc_auc,     
-                    "val_pr_auc": val_pr_auc        
+                    "val_precision": val_precision,
+                    "val_recall": val_recall,
+                    "val_f1": val_f1,
+                    "val_roc_auc": val_roc_auc,
+                    "val_pr_auc": val_pr_auc
                 })
-            
+
+                # --- Model Saving Logic (Best F1 Score - Overwriting) ---
+                if val_f1 > best_val_f1:
+                    best_val_f1 = val_f1
+                    best_epoch = epoch + 1
+                    # Save to the fixed filename, overwriting the previous one
+                    checkpoint = {
+                        'epoch': best_epoch, # Still save which epoch it came from
+                        'model_state_dict': model.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict(),
+                        'best_val_f1': best_val_f1,
+                        'val_loss_at_best_f1': val_loss,
+                        'config': config
+                    }
+
+                    torch.save(checkpoint, best_model_save_path_for_config)
+                    print(f"*** New best model saved! F1: {best_val_f1:.4f} at Epoch {best_epoch}. Overwriting {best_model_filename} ***")
+                    wandb.log({"best_val_f1_achieved": best_val_f1, "best_epoch": best_epoch, "epoch": epoch + 1})
+
+
             print("\n--- Training Complete ---")
+            print(f"Best Validation F1 Score for this run: {best_val_f1:.4f} at Epoch {best_epoch}")
+
 
             # --- Create and Log Misclassified Predictions Table to WandB ---
             if misclassified_data_for_logging:
                 misclassified_df = pd.DataFrame(misclassified_data_for_logging)
-                
+
                 # Handle image paths for WandB visualization if they are local paths
                 # Assuming 'image_links' in the collected data are lists of local file paths (strings or Path objects)
                 if 'image_links' in misclassified_df.columns:
@@ -280,7 +324,3 @@ def main(path_to_configs=Path(__file__).parent / "navermap_configs"):
                 print(f"Logged {len(misclassified_df)} misclassified samples to WandB table.")
             else:
                 print("No misclassified samples found in the last epoch to log for this run.")
-
-#%%
-if __name__ == "__main__":
-    main(path_to_configs=Path(__file__).parent / "navermap_configs")
