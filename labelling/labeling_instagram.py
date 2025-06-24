@@ -168,6 +168,7 @@ def objective(trial):
     params = {
         'learning_rate' : trial.suggest_float('learning_rate', 1e-5, 5e-5, log=True),
         #'batch_size' : trial.suggest_categorical('batch_size', [8]),
+        #GPU 용량 부족하면 batch_size 줄이고 넉넉하면 늘려도 됨
         'train_batch_size' : trial.suggest_categorical('train_batch_size', [4, 8]),
         'eval_batch_size' : trial.suggest_categorical('eval_batch_size', [8, 16]),
         'num_train_epochs' : trial.suggest_int('num_train_epochs', 3, 10),
@@ -176,7 +177,7 @@ def objective(trial):
 
     result = train_with_params(params, trial_number=trial.number)
     if isinstance(result, tuple):
-        metrics = result[0]  # 튜플이면 두 번째 원소가 metrics
+        metrics = result[0]  # 튜플이면 첫 번째 원소가 metrics
     else:
         metrics = result     # 아니면 그대로 metrics
 
@@ -186,7 +187,6 @@ def objective(trial):
 study = optuna.create_study(direction='maximize')
 study.optimize(objective, n_trials=10)   #하이퍼파라미터 새로운 조합 시도 횟수(experiment 횟수)
 print('Best params: ', study.best_params)
-#Best params:  {'learning_rate': 4.032897223604241e-05, 'train_batch_size': 8, 'eval_batch_size': 32, 'num_train_epochs': 8, 'weight_decay': 0.0018773593172162295}
 
 #최적의 파라미터 조합 적용
 best_params = study.best_params
