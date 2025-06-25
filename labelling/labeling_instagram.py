@@ -12,14 +12,13 @@ import wandb
 from transformers import TrainingArguments, Trainer
 import optuna   #기계학습 모델의 하이퍼파라미터 자동 조정하고 최적화하는 오픈 소스 라이브러리
 from transformers import pipeline
+import duckdb
 
 #토크나이저 관련 경고 무시
 os.environ['TOKENIZERS-PARALLELISM'] = 'true'
 
 #device 지정: 딥러닝 학습 속도 향상
 device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
-#torch.cuda.empty_cache()
-#print(f'사용 디바이스: {device}')   #cuda:1
 
 df = pd.read_excel('real_matjib/dataset/instagram_labeling.xlsx')
 
@@ -49,12 +48,14 @@ df_unlabeled = df_reviews.loc[1000:].copy()  #라벨링 X
 df_labeled['label'] = df_labeled['label'].map({'일반':0, '홍보':1}).astype(int)
 
 #라벨링된 데이터 Dataset으로 변환
-df_labeled = Dataset.from_pandas(df_labeled)
-split_ds = df_labeled.train_test_split(test_size=0.2, seed=42)
+ds_labeled = Dataset.from_pandas(df_labeled)
+split_ds = ds_labeled.train_test_split(test_size=0.2, seed=42)
 dataset = DatasetDict({
-    'train': split_ds['train'], #800
-    'validation': split_ds['test']  #200
+    'train': split_ds['train'],
+    'validation': split_ds['test']
 })
+
+#len(dataset['train']), len(dataset['validation'])  #(800, 200)이어야 함
 
 #예측용 데이터 Dataset으로 변환
 ds_unlabeled = Dataset.from_pandas(df_unlabeled)
@@ -76,6 +77,8 @@ tokenized_datasets = {
     'validation': dataset['validation'].map(preprocess_function, batched=True),
     'test': ds_unlabeled.map(preprocess_function, batched=True)
 }
+
+#print(len(tokenized_datasets['validation']))  # 200이어야 함
 
 def model_init():
     return AutoModelForSequenceClassification.from_pretrained(
@@ -161,14 +164,13 @@ def train_with_params(params, trial_number=None, is_best=False):
     
     run.finish()
     
-    return final_metrics, trainer.model
+    return trainer.model, final_metrics
 
 def objective(trial):
     #하이퍼파라미터 탐색
     params = {
         'learning_rate' : trial.suggest_float('learning_rate', 1e-5, 5e-5, log=True),
         #'batch_size' : trial.suggest_categorical('batch_size', [8]),
-        #GPU 용량 부족하면 batch_size 줄이고 넉넉하면 늘려도 됨
         'train_batch_size' : trial.suggest_categorical('train_batch_size', [4, 8]),
         'eval_batch_size' : trial.suggest_categorical('eval_batch_size', [8, 16]),
         'num_train_epochs' : trial.suggest_int('num_train_epochs', 3, 10),
@@ -177,7 +179,7 @@ def objective(trial):
 
     result = train_with_params(params, trial_number=trial.number)
     if isinstance(result, tuple):
-        metrics = result[0]  # 튜플이면 첫 번째 원소가 metrics
+        metrics = result[1]  # 튜플이면 두 번째 원소가 metrics
     else:
         metrics = result     # 아니면 그대로 metrics
 
@@ -187,6 +189,7 @@ def objective(trial):
 study = optuna.create_study(direction='maximize')
 study.optimize(objective, n_trials=10)   #하이퍼파라미터 새로운 조합 시도 횟수(experiment 횟수)
 print('Best params: ', study.best_params)
+#Best params:  {'learning_rate': 4.032897223604241e-05, 'train_batch_size': 8, 'eval_batch_size': 32, 'num_train_epochs': 8, 'weight_decay': 0.0018773593172162295}
 
 #최적의 파라미터 조합 적용
 best_params = study.best_params
@@ -196,28 +199,43 @@ model, metrics = train_with_params(best_params, is_best=True)
 model.save_pretrained('instagram_reviews_labeling_model')
 tokenizer.save_pretrained('instagram_reviews_labeling_model')
 
-#파인튜닝된 모델을 pipelne에 적용
-classifier = pipeline(
-    'text-classification', 
-    model='instagram_reviews_labeling_model',
-    device=0,
-    truction=True,
-    padding=True,
-    max_length=512
-)
+test_inputs = tokenized_datasets['test'].to_dict()
+input_ids = torch.tensor(test_inputs['input_ids']).to('cuda:0')
+attention_mask = torch.tensor(test_inputs['attention_mask']).to('cuda:0')
 
-#예측할 텍스트 리스트 준비
-texts = df_unlabeled['reviews'].tolist()
+batch_size = 8  # GPU 메모리 여유에 따라 조정
+#데이터가 너무 많아서 한 번에 메모리에 올리기 어렵거나 예측이 너무 오래 걸릴 때
+chunk_size = 500  # 한 번에 예측할 데이터 개수 (input_ids 기준)
+results = []
 
-#예측
-results = classifier(texts, batch_size=8)
+for chunk_start in range(0, len(input_ids), chunk_size):
+    chunk_end = chunk_start + chunk_size
+    chunk_input_ids = input_ids[chunk_start:chunk_end]
+    chunk_attention_mask = attention_mask[chunk_start:chunk_end]
+    
+    chunk_results = []
+    for i in range(0, len(chunk_input_ids), batch_size):
+        batch_input_ids = chunk_input_ids[i:i+batch_size]
+        batch_attention_mask = chunk_attention_mask[i:i+batch_size]
+        with torch.no_grad():
+            outputs = model(input_ids=batch_input_ids, attention_mask=batch_attention_mask)
+        chunk_results.append(outputs.logits)
+    results.extend(chunk_results)
 
-#결과확인
-predictions = [r['label'] for r in results] #각 결과에서 label만 추출
+logits = torch.cat(results, dim=0)
+predictions = np.argmax(logits.cpu().numpy(), axis=1)
+
 df_unlabeled['label'] = predictions
+df_unlabeled['label'] = df_unlabeled['label'].map({0:'일반', 1:'홍보'}).astype(str)
 
-#데이터프레임 합치기
-df_total = pd.concat([df_labeled, df_unlabeled], axis=0)
+df_result = pd.concat([df_labeled, df_unlabeled], axis=0)
 
-#데이터프레임 엑셀 파일로 저장
-df_total.to_excel('instagram_labeling.xlsx', index=False, engine='openpyxl')
+#엑셀 파일을 duck db 파일로 변환
+#데이터베이스 파일에 연결
+conn = duckdb.connect('instagram_labeling.duckdb')
+
+#df_result를 DuckDB 테이브롤 저장
+conn.sql("CREATE TABLE INSTA_LABEL AS SELECT * FROM df_result")
+
+#연결 종료
+conn.close()
