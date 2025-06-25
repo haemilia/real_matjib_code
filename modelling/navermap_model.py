@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 from navermap_preprocess import TextPreprocessor, ImagePreprocessor
 from navermap_utils import TabularEncoder
-
 # --- InterModalAttention Module ---
 class InterModalAttention(nn.Module):
     """
@@ -22,7 +21,7 @@ class InterModalAttention(nn.Module):
             dropout (float): Dropout rate.
         """
         super().__init__()
-        
+
         # Ensure embed_dim is divisible by num_heads
         if embed_dim % num_heads != 0:
             raise ValueError(f"embed_dim ({embed_dim}) must be divisible by num_heads ({num_heads})")
@@ -35,7 +34,7 @@ class InterModalAttention(nn.Module):
             dropout=dropout,
             batch_first=True # Input/output tensors will have batch dimension first
         )
-        
+
         # Stack multiple encoder layers if num_layers > 1
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers)
         self.embed_dim = embed_dim
@@ -84,7 +83,7 @@ class InterModalAttention(nn.Module):
         fused_representation = attended_output[:, 0, :] # Shape (batch_size, embed_dim)
 
         return fused_representation
-    
+
 # --- Classifier Head Module ---
 class ClassifierHead(nn.Module):
     """
@@ -124,7 +123,7 @@ class ClassifierHead(nn.Module):
         x = self.dropout(x)
         logits = self.fc2(x) # Raw logits, no sigmoid here. Sigmoid will be applied with BCELossWithLogits or later.
         return logits
-    
+
     #################################### MAIN MODEL #################################################################################
 class NaverMapModel(nn.Module):
     """
@@ -132,7 +131,7 @@ class NaverMapModel(nn.Module):
     It orchestrates the entire data flow from raw inputs through preprocessors,
     encoders, inter-modal attention, and a classifier head.
     """
-    def __init__(self, config: dict, tabular_input_dim: int):
+    def __init__(self, config: dict, tabular_input_dim: int, device):
         """
         Initializes the MultiModalClassifier.
 
@@ -142,7 +141,8 @@ class NaverMapModel(nn.Module):
             tabular_input_dim (int): The number of features in the raw tabular data.
         """
         super().__init__()
-        
+        self.device = device
+
         # Extract configurations for different parts of the model
         text_config = config.get('text_preprocessing', {})
         image_config = config.get('image_preprocessing', {})
@@ -157,9 +157,9 @@ class NaverMapModel(nn.Module):
 
         # --- Instantiate Preprocessors ---
         # These handle raw data to feature vectors for each modality
-        self.text_preprocessor = TextPreprocessor(text_config)
-        self.image_preprocessor = ImagePreprocessor(image_config)
-        
+        self.text_preprocessor = TextPreprocessor(text_config, self.device)
+        self.image_preprocessor = ImagePreprocessor(image_config, self.device)
+
         # --- Instantiate Tabular Encoder ---
         # Note: tabular_output_dim should ideally be fusion_embed_dim for inter-modal attention
         self.tabular_encoder = TabularEncoder(
@@ -167,14 +167,24 @@ class NaverMapModel(nn.Module):
             output_dim=self.fusion_embed_dim # Ensure tabular output matches fusion_embed_dim
         )
 
-        # --- Instantiate Inter-Modal Attention ---
-        # This module fuses the outputs from text, image, and tabular encoders
-        self.inter_modal_attention = InterModalAttention(
-            embed_dim=self.fusion_embed_dim,
-            num_heads=model_arch_config.get("attention_heads", 4),
-            num_layers=model_arch_config.get("attention_layers", 1),
-            dropout=model_arch_config.get("dropout", 0.1)
-        )
+        self.no_intermodal_attention = model_arch_config.get("no_intermodal_attention", False) # Store this flag
+        if self.no_intermodal_attention:
+            self.inter_modal_attention = None
+            # If no_intermodal_attention is True, we need a projection layer
+            # after concatenating the outputs of the individual encoders.
+            # The input dimension to this projection will be the sum of output dimensions
+            # from all encoders (text, image, tabular).
+            # Assuming each preprocessor/encoder outputs self.fusion_embed_dim
+            total_concat_dim = self.fusion_embed_dim * 3 # For text, image, tabular
+            self.concat_projection = nn.Linear(total_concat_dim, self.fusion_embed_dim)
+            self.concat_projection_activation = nn.ReLU()
+        else:
+            self.inter_modal_attention = InterModalAttention(
+                embed_dim=self.fusion_embed_dim,
+                num_heads=model_arch_config.get("attention_heads", 4),
+                num_layers=model_arch_config.get("attention_layers", 1),
+                dropout=model_arch_config.get("dropout", 0.1)
+            )
 
         # --- Instantiate Classifier Head ---
         # This takes the fused multi-modal embedding and outputs logits
@@ -225,17 +235,27 @@ class NaverMapModel(nn.Module):
 
         # --- 2. Inter-Modal Attention / Fusion ---
         # Fuses the processed embeddings from text, image, and tabular modalities
-        fused_multi_modal_features = self.inter_modal_attention(
-            text_fused_embedding,
-            image_fused_embedding,
-            tabular_embedding
-        ) # (batch_size, fusion_embed_dim)
+        if self.no_intermodal_attention:
+            # Concatenate all embeddings
+            concatenated_features = torch.cat(
+                (text_fused_embedding, image_fused_embedding, tabular_embedding),
+                dim=1
+            ) # Shape: (batch_size, 3 * fusion_embed_dim)
+
+            # Project concatenated features to fusion_embed_dim
+            fused_multi_modal_features = self.concat_projection_activation(
+                self.concat_projection(concatenated_features)
+            ) # Shape: (batch_size, fusion_embed_dim)
+        else:
+            fused_multi_modal_features = self.inter_modal_attention(
+                text_fused_embedding,
+                image_fused_embedding,
+                tabular_embedding
+            ) # Shape: (batch_size, fusion_embed_dim)
+
 
         # --- 3. Classifier Head ---
         # Outputs raw logits for binary classification
         logits = self.classifier_head(fused_multi_modal_features) # (batch_size, 1)
 
         return logits
-    
-if __name__ == '__main__':
-    pass

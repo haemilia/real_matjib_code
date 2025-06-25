@@ -1,4 +1,3 @@
-#%%
 import torch
 import torch.nn as nn
 from transformers import AutoModel, CLIPVisionModel
@@ -9,7 +8,6 @@ import numpy as np
 import os
 import ast
 import re
-import emoji
 from soynlp.normalizer import repeat_normalize # type: ignore[import-untyped]
 
 ###################################################################################################################################################################
@@ -30,17 +28,17 @@ class NavermapReviewDataset(Dataset):
         """
         self.dataframe = dataframe.copy()
 
-        # MODIFIED: Use dictionaries to define column types for clarity and processing logic
+        # Use dictionaries to define column types for clarity and processing logic
         self.text_cols = {
             'review_text': 'string',
             'store_naver_name': 'string',
-            'visit_keywords': 'list_of_strings', # Correctly identified as list_of_strings
-            'keyword_tags_hangul': 'list_of_strings', # Correctly identified as list_of_strings
-            'category': 'list_of_strings' # <-- IMPORTANT FIX: Changed to 'list_of_strings' based on sample data
+            'visit_keywords': 'list_of_strings',
+            'keyword_tags_hangul': 'list_of_strings',
+            'category': 'list_of_strings'
         }
         self.image_link_cols = {
-            'image_links': 'list_of_strings', # Correctly identified as list_of_strings
-            'video_thumbnail_links': 'list_of_strings' # Add if you have this column
+            'image_links': 'list_of_strings',
+            'video_thumbnail_links': 'list_of_strings'
         }
         self.tabular_numerical_cols = [
             'num_of_media', 'visit_count', 'author_total_reviews',
@@ -54,15 +52,14 @@ class NavermapReviewDataset(Dataset):
                             self.tabular_numerical_cols + \
                             ['is_advert']
 
-        # ADDED/MODIFIED: Ensure all expected columns exist in the DataFrame with sensible defaults
-        # This loop now just ensures column presence; type-specific filling is done below.
+        # This loop just ensures column presence; type-specific filling is done below.
         for col in all_expected_cols:
             if col not in self.dataframe.columns:
                 # Add missing column; value will be overwritten by type-specific processing below
                 self.dataframe[col] = np.nan # Use NaN initially for clearer type handling
                 print(f"Warning: Column '{col}' not found in DataFrame. Adding as NaN for later processing.")
-        
-        # --- NEW/MODIFIED BLOCK: Standardize all text and image-link columns to final Python types in __init__ ---
+
+        # Standardize all text and image-link columns to final Python types in __init__ ---
         for col_name, col_type in self.text_cols.items():
             if col_type == 'string':
                 # Apply _parse_to_python_string to ensure native str (handles None/NaN to "")
@@ -74,27 +71,19 @@ class NavermapReviewDataset(Dataset):
         for col_name, col_type in self.image_link_cols.items():
             # All image_link_cols are expected to be 'list_of_strings'
             self.dataframe[col_name] = self.dataframe[col_name].apply(self._parse_to_python_list_of_strings)
-        
+
         # No change to numerical fillna logic (this part remains as is, as it's separate)
         # Note: 'is_advert' handling is also separate below and is fine.
 
         # Numerical data preprocessing (Imputation for NaNs and type conversion)
-        count_cols_to_zero_impute = ['author_total_reviews', 'author_total_images']
+        count_cols_to_zero_impute = ['author_total_reviews', 'author_total_images', 'rating']
         for col in count_cols_to_zero_impute:
             self.dataframe[col] = self.dataframe[col].fillna(0.0)
-
-        if 'rating' in self.dataframe.columns: # Check existence again, though already added as NaN if missing
-            median_rating_val = self.dataframe['rating'].median()
-            self.dataframe['rating'] = self.dataframe['rating'].fillna(median_rating_val)
-        else: # This else branch might not be hit if col was added as NaN, but good for safety
-            self.dataframe['rating'] = 0.0
-            print("Warning: Column 'rating' was missing and defaulted to 0.0.")
 
         if 'is_advert' in self.dataframe.columns:
             self.dataframe['is_advert'] = self.dataframe['is_advert'].astype(float)
         else:
-            self.dataframe['is_advert'] = 0.0
-            print("Warning: Column 'is_advert' was missing and defaulted to 0.0.")
+            raise ValueError("Label column 'is_advert' was missing and defaulted to 0.0.")
 
         for col in self.tabular_numerical_cols:
             self.dataframe[col] = pd.to_numeric(self.dataframe[col], errors='coerce').fillna(0.0)
@@ -113,7 +102,7 @@ class NavermapReviewDataset(Dataset):
             return str(value) # e.g., ['a', 'b'] -> "['a', 'b']"
         else:
             return str(value) # Convert any other type to string
-    
+
     def _parse_to_python_list_of_strings(self, value):
         """
         Helper method to robustly convert a cell value into a Python list of strings.
@@ -141,7 +130,7 @@ class NavermapReviewDataset(Dataset):
             return []
         else:
             return [str(value)] # Fallback for other unexpected types, convert to string and put in list
-        
+
     def __len__(self):
         """Returns the total number of samples in the dataset."""
         return len(self.dataframe)
@@ -153,7 +142,7 @@ class NavermapReviewDataset(Dataset):
         for col_name, col_type in self.text_cols.items(): # Use col_name to iterate
             # row[col_name] is now guaranteed to be 'str' for 'string' types, and 'list[str]' for 'list_of_strings' types
             if col_type == 'string':
-                sample_data[col_name] = row[col_name] # It's already a string, no need for str() cast
+                sample_data[col_name] = row[col_name]
             else: # col_type == 'list_of_strings'
                 sample_data[col_name] = list(row[col_name]) # It's already a list, make a defensive copy
 
@@ -186,7 +175,7 @@ class NavermapReviewDataset(Dataset):
     def get_image_link_columns(self):
         """Helper to get the list of image link columns actually used."""
         return self.image_link_cols
-    
+
 # --- The Custom Collate Function for DataLoader ---
 def custom_collate_fn(batch):
     """
@@ -214,16 +203,11 @@ def custom_collate_fn(batch):
         else:
             # All other keys (single text strings) are collected as lists of strings
             collated_batch[key] = [item[key] for item in batch]
-            
+
     return collated_batch
 
 ###################################################################################################################################################################
 # --- Text Cleaning Function ---
-emojis = ''.join(emoji.EMOJI_DATA.keys())
-# The pattern now focuses on removing characters that are NOT standard (English, Korean, punctuation, basic symbols)
-# Emojis will pass through this regex and be handled by the tokenizer.
-pattern = re.compile(f'[^ .,?!/@$%~％·∼()\\x00-\\x7Fㄱ-ㅣ가-힣{re.escape(emojis)}]+')
-
 url_pattern = re.compile(
     r'https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)')
 
@@ -238,7 +222,6 @@ def clean_text(x):
     """
     if not isinstance(x, str): # Ensure input is a string
         return ""
-    x = pattern.sub(' ', x) # Remove characters not in the allowed set
     x = url_pattern.sub('', x) # Remove URLs
     x = x.strip() # Remove leading/trailing whitespace
     x = repeat_normalize(x, num_repeats=2) # Normalize repeated characters
@@ -260,7 +243,7 @@ def load_and_resize_image(image_path: str, target_size: tuple = (224, 224)) -> I
     if not os.path.exists(image_path):
         print(f"Error: Image file not found at {image_path}")
         return None
-    
+
     try:
         img = Image.open(image_path).convert('RGB') # Ensure image is in RGB format
         img = img.resize(target_size, Image.Resampling.LANCZOS) # Use LANCZOS for high-quality downsampling
@@ -270,7 +253,7 @@ def load_and_resize_image(image_path: str, target_size: tuple = (224, 224)) -> I
         return None
 
 class KcELECTRATextEncoder(torch.nn.Module):
-    def __init__(self, model_name="beomi/KcELECTRA-base"):
+    def __init__(self, model_name="monologg/koelectra-small-discriminator"):
         super().__init__()
         self.model = AutoModel.from_pretrained(model_name)
         self.embedding_dim = self.model.config.hidden_size # Store embedding dimension
@@ -306,7 +289,7 @@ class CLIPImageEncoder(torch.nn.Module):
         # Load only the vision model part of CLIP.
         # CLIPVisionModel is more direct if you only need the vision component.
         model = CLIPVisionModel.from_pretrained(model_name)
-        
+
         # Ensure we got a CLIPVisionModel instance
         assert isinstance(model, CLIPVisionModel), \
             "The loaded model is not a CLIPVisionModel instance."
@@ -333,7 +316,7 @@ class CLIPImageEncoder(torch.nn.Module):
         # and returns a BaseModelOutputWithPooling.
         # We extract the 'pooler_output' which is the [CLS] token's pooled representation.
         image_features = self.model(pixel_values=pixel_values).pooler_output
-        
+
         return image_features
 
 class TabularEncoder(torch.nn.Module):
@@ -378,4 +361,3 @@ class SimpleCrossAttention(nn.Module):
 
         attn_output, _ = self.attention(query, key_value_emb, key_value_emb)
         return attn_output.squeeze(1)
-

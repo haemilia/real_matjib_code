@@ -3,3 +3,4 @@
 *.db
 *.parquet
 modelling/wandb
+.venv
