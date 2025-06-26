@@ -136,39 +136,6 @@ con = get_r2_duckdb_connection()
 if con: # Only proceed if connection was successful
     st.subheader("Data from R2 DuckDB")
 
-    # --- Displaying Tables (Optional, for general overview) ---
-    try:
-        # No need for an internal connection check here anymore.
-        # get_r2_duckdb_connection() should ensure a live connection.
-        all_tables_df = con.execute("SHOW ALL TABLES;").fetchdf()
-        st.write("All Tables found in connected DuckDB instance:")
-        st.dataframe(all_tables_df)
-
-        r2_tables = all_tables_df[all_tables_df['database'] == 'reviews_db']
-        st.write("Tables specifically from `reviews_db` on R2:")
-        st.dataframe(r2_tables)
-
-        if not r2_tables.empty:
-            first_table_name = r2_tables['name'].iloc[0]
-            st.info(f"Showing first 10 rows from table: '{first_table_name}'")
-            query_data = f"SELECT * FROM reviews_db.{first_table_name} LIMIT 10;"
-            df = con.execute(query_data).fetchdf()
-            st.dataframe(df)
-        else:
-            st.warning("No tables found in your DuckDB file on R2 via metadata. Please ensure your DuckDB file contains tables.")
-            known_table_name = "restaurants"
-            st.info(f"As a fallback, trying to show first 10 rows from hardcoded table: '{known_table_name}'")
-            try:
-                query_data_known = f"SELECT * FROM reviews_db.{known_table_name} LIMIT 10;"
-                df_known = con.execute(query_data_known).fetchdf()
-                st.dataframe(df_known)
-                st.success(f"Successfully queried hardcoded table '{known_table_name}'!")
-            except Exception as e_known:
-                st.error(f"Error querying hardcoded table '{known_table_name}': {e_known}")
-                st.info("Please ensure the hardcoded table name is correct and exists in your DuckDB file.")
-    except Exception as e_display:
-        st.error(f"Error displaying tables: {e_display}")
-
 
     # --- Fetch and Plot Map Data ---
     st.subheader("Store Locations Map")
