@@ -101,7 +101,7 @@ def plot_stores_on_map(df):
     center_lon = df['X_naver_WGS_84'].mean()
 
     # Create the scatter mapbox plot
-    fig = px.scatter_mapbox(
+    fig = px.scatter_map(
         df,
         lat="Y_naver_WGS_84", # Latitude column
         lon="X_naver_WGS_84", # Longitude column
@@ -165,5 +165,3 @@ if con: # Only proceed if connection was successful
             st.plotly_chart(map_figure, use_container_width=True)
     else:
         st.error("Could not retrieve data to plot the map. Please check the table name 'restaurants' and data availability.")
-
-    con.close() # Close the connection when done
