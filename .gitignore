@@ -3,4 +3,5 @@
 *.db
 *.parquet
 modelling/wandb
-.venv
+secrets.toml
+.env
