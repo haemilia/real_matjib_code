@@ -586,7 +586,7 @@ def test():
         print("CUDA is NOT available. Please check your installation and drivers.")
 
 if __name__ == "__main__":
-    test_df= DATADIR / "navermap_reviews_test.parquet"
+    test_df= pd.read_parquet(DATADIR / "navermap_reviews_test.parquet")
     main(test_df, Path(__file__).parent / "navermap_configs")
     # test()
 #%%
