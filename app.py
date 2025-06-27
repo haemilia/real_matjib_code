@@ -1,8 +1,11 @@
+#%%
 import streamlit as st
 import duckdb
-import plotly.express as px
-import os
+from viz.restaurants_map_plot import plot_restaurants_on_map
 import pandas as pd
+from typing import Tuple
+# Set layout as wide
+st.set_page_config(layout="wide")
 
 # --- DuckDB Connection to R2 ---
 @st.cache_resource(ttl="1h") # Cache the DuckDB connection for up to 1 hour
@@ -40,10 +43,10 @@ def get_r2_duckdb_connection():
             """)
 
             # Attach the remote DuckDB database
-            con.execute(f"ATTACH '{db_path_r2_protocol}' AS reviews_db (READ_ONLY TRUE);")
+            con.execute(f"ATTACH '{db_path_r2_protocol}' AS reviews (READ_ONLY TRUE);")
 
             # Perform a quick test query to ensure connection is live and attached DB is accessible
-            con.execute("SELECT 1 FROM reviews_db.restaurants LIMIT 1;").fetchone()
+            con.execute("SELECT 1 FROM reviews.restaurants LIMIT 1;").fetchone()
             st.success(f"Successfully connected to DuckDB file on R2 on attempt {attempt + 1}.")
             return con # Return the live connection
 
@@ -61,26 +64,33 @@ def get_r2_duckdb_connection():
     # This line should theoretically not be reached due to st.stop()
     return None
 
+@st.cache_resource(ttl="1h")
+def get_gdrive_duckdb_connection():
+    try:
+        con = duckdb.connect(r"H:\My Drive\reviews.db")
+    except Exception as e:
+        st.warning("Connection to Google Drive DuckDB failed!")
+        st.stop()
+    else:
+        return con
+    return None
 # --- Function to get map data from DuckDB ---
-def get_map_data(duckdb_connection):
+def get_map_data(con:duckdb.DuckDBPyConnection) -> Tuple[pd.Series|None]:
     """
-    Queries the first 10 rows of store_name, jibun_address, X_naver_WGS_84 (longitude),
-    and Y_naver_WGS_84 (latitude) from the 'restaurants' table,
-    and ensures coordinate columns are numeric.
+    Queries X_EPSG_5174(longitude), Y_EPSG_5174(latitude), store_name from table `restaurants`.
+    Returns columns as tuple of pd.Series.
     """
     table_name = "restaurants"
 
     try:
         query = f"""
         SELECT
-            store_name,
-            jibun_address,
-            X_naver_WGS_84, -- Longitude
-            Y_naver_WGS_84  -- Latitude
-        FROM reviews_db.{table_name}
-        LIMIT 10;
+            X_naver_WGS_84,
+            Y_naver_WGS_84,
+            store_name
+        FROM reviews.{table_name};
         """
-        df = duckdb_connection.execute(query).fetchdf()
+        df = con.execute(query).fetchdf()
 
         # Convert coordinate columns to numeric
         df['X_naver_WGS_84'] = pd.to_numeric(df['X_naver_WGS_84'], errors='coerce')
@@ -89,61 +99,32 @@ def get_map_data(duckdb_connection):
         # Drop rows where coordinates might have become NaN due to coercion
         df.dropna(subset=['X_naver_WGS_84', 'Y_naver_WGS_84'], inplace=True)
 
-        return df
+        lat = df["Y_naver_WGS_84"]
+        long =  df["X_naver_WGS_84"]
+        store_name = df["store_name"]
+        return lat, long, store_name
     except Exception as e:
         st.error(f"Error querying data for map from table '{table_name}': {e}")
-        return pd.DataFrame() # Return empty DataFrame on error
-
-# --- Function to plot the map ---
-def plot_stores_on_map(df):
-    """
-    Plots store locations on a Plotly map.
-    Args:
-        df (pd.DataFrame): DataFrame containing store_name, jibun_address,
-                           X_naver_WGS_84 (lon), Y_naver_WGS_84 (lat).
-    Returns:
-        plotly.graph_objects.Figure: The Plotly map figure.
-    """
-    if df.empty:
-        st.warning("No data available to plot on the map.")
-        return None
-
-    center_lat = df['Y_naver_WGS_84'].mean()
-    center_lon = df['X_naver_WGS_84'].mean()
-
-    # Use px.scatter_map as recommended (replaces scatter_mapbox)
-    fig = px.scatter_map( # Changed to scatter_map
-        df,
-        lat="Y_naver_WGS_84",
-        lon="X_naver_WGS_84",
-        hover_name="store_name",
-        hover_data={"jibun_address": True, "store_name": False},
-        zoom=12,
-        center={"lat": center_lat, "lon": center_lon},
-        title="Top 10 Stores by Location"
-    )
-
-    fig.update_layout(margin={"r":0,"t":50,"l":0,"b":0})
-
-    return fig
+        return (None, None, None) # Return tuple of Nones if there's an error
+#%%
+#%%
 
 # --- Main Streamlit App Logic ---
-st.header("Real Matjib Data - Powered by DuckDB on Cloudflare R2")
+st.header("진품명품 : 진짜 맛집 찾기")
 
 # Get the cached DuckDB connection
 con = get_r2_duckdb_connection()
+# con = get_gdrive_duckdb_connection() # For development
 
 if con: # Only proceed if connection was successful
-    st.subheader("Data from R2 DuckDB")
-
 
     # --- Fetch and Plot Map Data ---
-    st.subheader("Store Locations Map")
-    map_data_df = get_map_data(con) # Use the 'con' guaranteed to be live
+    st.subheader("연남동 일반 음식점")
+    lat, long, store_name = get_map_data(con) # Use the 'con' guaranteed to be live
 
-    if not map_data_df.empty:
-        map_figure = plot_stores_on_map(map_data_df)
+    if (lat is not None) and (long is not None) and (store_name is not None):
+        map_figure = plot_restaurants_on_map(lat, long, store_name)
         if map_figure:
-            st.plotly_chart(map_figure, use_container_width=True) # THIS IS WHERE THE MAP IS SHOWN
+            st.plotly_chart(map_figure, use_container_width=False) # THIS IS WHERE THE MAP IS SHOWN
     else:
         st.error("Could not retrieve data to plot the map. Please check the table name 'restaurants' and data availability.")
