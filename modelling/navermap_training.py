@@ -19,7 +19,7 @@ WANDB_PROJECT_NAME = "navermap-review-classification"
 WANDB_ENTITY = "haemilia-"
 
 # --- configuration ---
-DATADIR = Path("/content/drive/MyDrive/CV_training/real_matjib_colab")
+DATADIR = Path(r"G:\My Drive\Data\naver_search_results")
 
 def re_root_path(img_paths:dict, root_dir:Path):
     new_img_paths = {}
@@ -40,7 +40,7 @@ def get_final_training_dataset(datadir_path=DATADIR):
     with_category.drop(columns=["naver_store_id"], inplace=True)
     with open(datadir_path / "navermap_reviews_labelled_only_local_image_paths.pickle", "rb") as rf:
         img_paths = pickle.load(rf)
-    rerooted = re_root_path(img_paths, Path("/content/navermap_reviews_labelled_only_images"))
+    rerooted = re_root_path(img_paths, Path(__file__).parent.parent.parent / "images")
     img_df = pd.DataFrame(rerooted).T.reset_index(names="review_id")
     dropped_df = with_category.drop(columns=["image_links", "video_thumbnail_links"])
     result = pd.merge(dropped_df, img_df, on="review_id")
@@ -305,8 +305,9 @@ def evaluate_on_test_set(test_df: pd.DataFrame, model_path: Path):
 
     return metrics, misclassified_df, all_predictions_np, all_probabilities_np, all_labels_np
 
+
 # Somewhere to save the resulting model
-MODEL_SAVE_DIR = DATADIR / "saved_models"
+MODEL_SAVE_DIR = Path(__file__).parent.parent.parent / "models"
 MODEL_SAVE_DIR.mkdir(exist_ok=True)
 
 def main(test_df, path_to_configs=DATADIR / "navermap_configs"):
@@ -562,3 +563,30 @@ def main(test_df, path_to_configs=DATADIR / "navermap_configs"):
 
             # At the end of the 'with wandb.init' block, the run will automatically finish and sync.
             print(f"WandB run '{run.name}' finished and synced.")
+
+def test():
+    import torch
+
+    print(f"PyTorch Version: {torch.__version__}")
+    print(f"Is CUDA available: {torch.cuda.is_available()}")
+    print(f"Number of GPUs: {torch.cuda.device_count()}")
+
+    if torch.cuda.is_available():
+        print(f"Current CUDA device: {torch.cuda.current_device()}")
+        print(f"Device name: {torch.cuda.get_device_name(torch.cuda.current_device())}")
+        print(f"CUDA version PyTorch was built with: {torch.version.cuda}")
+
+        # Test moving a tensor to the GPU
+        x = torch.randn(3, 3)
+        print(f"CPU tensor:\n{x}")
+        x_cuda = x.to('cuda')
+        print(f"GPU tensor:\n{x_cuda}")
+        print(f"Tensor device: {x_cuda.device}")
+    else:
+        print("CUDA is NOT available. Please check your installation and drivers.")
+
+if __name__ == "__main__":
+    test_df= DATADIR / "navermap_reviews_test.parquet"
+    main(test_df, Path(__file__).parent / "navermap_configs")
+    # test()
+#%%
