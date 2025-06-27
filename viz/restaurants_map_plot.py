@@ -1,5 +1,5 @@
+#%%
 import plotly.graph_objects as go
-import streamlit as st
 
 def plot_restaurants_on_map(
         #음식점 위도/경도, 음식점명, 타이틀
@@ -15,19 +15,20 @@ def plot_restaurants_on_map(
             mode='markers',
             #마커 스타일 지정
             marker=go.scattermap.Marker(
-                size=5,
+                size=10,
                 color='red',
                 opacity=0.4,
                 symbol='circle'
             ),
             text=store_name,    #음식점명
-            hoverinfo='text'    #마커에 마우스 hover시, 음식점명 출력
+            hoverinfo='text'    #마커에 마우스 hover시, 음식점명 출력,
         )
     )
     #그래프의 레이아웃과 시각적 속성 설정
     fig.update_layout(
         title=dict(text=title), #그래프 제목
         autosize=True,  #창 크기에 따라 자동으로 그래프 크기 조절
+        height=700,
         hovermode='closest',    #마우스를 가장 가까운 점에만 반응하도록 설정
         showlegend=False,   #범례 표시 여부
         map=dict(
@@ -42,4 +43,3 @@ def plot_restaurants_on_map(
         )
     )
     return fig   #plotly.fig 객체 리턴
-
