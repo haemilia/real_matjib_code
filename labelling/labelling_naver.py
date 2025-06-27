@@ -271,12 +271,188 @@ def save_table_to_parquet(conn: duckdb.DuckDBPyConnection, table_name: str, dest
     except duckdb.Error as e:
         print(f"Error saving table '{table_name}' to Parquet: {e}")
 
+def save_table_rows_with_non_null_column_to_parquet(
+    conn: duckdb.DuckDBPyConnection,
+    table_name: str,
+    column_to_check_not_null: str,
+    destination_directory: Path
+):
+    """
+    Saves rows from a table in a DuckDB database to a Parquet file,
+    including only rows where a specified column has non-null values.
 
+    Args:
+        conn: The DuckDB connection object.
+        table_name: The name of the table to save.
+        column_to_check_not_null: The name of the column to check for non-null values.
+        destination_directory: The Path object for the directory where the Parquet file will be saved.
+    """
+    destination_directory.mkdir(parents=True, exist_ok=True)
+
+    # Create a descriptive output filename
+    output_filename = f"{table_name}_non_null_{column_to_check_not_null}.parquet"
+    output_filepath = destination_directory / output_filename
+
+    try:
+        # Construct the SQL query to select rows where the specified column is not NULL
+        # DuckDB's COPY command can export the result of a SELECT statement
+        sql_query = f"COPY (SELECT * FROM {table_name} WHERE {column_to_check_not_null} IS NOT NULL) TO '{output_filepath.as_posix()}' (FORMAT PARQUET);"
+
+        conn.execute(sql_query)
+        print(f"Rows from table '{table_name}' with non-null values in '{column_to_check_not_null}' "
+              f"successfully saved to '{output_filepath}'")
+    except duckdb.Error as e:
+        print(f"Error saving filtered rows from table '{table_name}' to Parquet: {e}")
+
+def map_labelling_loop(conn:duckdb.DuckDBPyConnection, 
+                       sampled_reviews:pd.DataFrame, 
+                       int_begin_input:int,
+                       labelled_column_name:str,
+                       id_name:str,
+                       labelled_table_name:str):
+    all_reviews_num = len(sampled_reviews)
+    while True:
+        clear_console()
+        print("-"*20 + " LABELLING LOOP "+ "-"*20)
+        print(f"Current review: {int_begin_input+1}/{all_reviews_num}")
+
+        if int_begin_input< 0 or int_begin_input > all_reviews_num -1:
+            print("OUT OF BOUNDS!")
+            break
+        # Retrieve data from that index
+        current_data = sampled_reviews.iloc[int_begin_input]
+        current_store_id = current_data["store_id"]
+        num_reviews_for_current_store = len(sampled_reviews[sampled_reviews["store_id"] == current_store_id])
+        print(f"Store ID: {current_store_id} | Reviews for this store in sample: {num_reviews_for_current_store}")
+        
+        # Retrieve the current label for the displayed review
+        current_label_value = current_data.get(labelled_column_name)
+        if pd.isna(current_label_value):
+            print("\nThis review has not been labeled yet.")
+            prompt_options = ['q', 'b', '0', '1', 's'] # 's' option to save the labelled result as a parquet
+            extra_prompt_text = ""
+        else:
+            label_display = "True" if current_label_value else "False"
+            print(f"\nPreviously labeled as: {labelled_column_name}: {label_display}")
+            prompt_options = ['q', 'b', 'n', '0', '1', "", 's'] # Add 'n' option (and equivalent "" option)
+            extra_prompt_text = "Enter 'n', or nothing to go to the next entry without changing the label. "
+        
+        store_url = restaurant_page_url(current_data["store_id"])
+        print("Store Page URL: ", store_url)
+        print()
+        print(current_data["review_text"])
+        print()
+        
+        print(current_data) # Print series form of row
+
+        print(f"You are labelling whether the review {labelled_column_name}")
+        # Prompt for navigating reviews
+        label_prompt = f"Enter 1 for {labelled_column_name}:True. Enter 0 for {labelled_column_name}:False."
+        loop_prompt = extra_prompt_text + "Enter 'q' to quit the program. Enter 'b' to move back to previous review: "
+        user_input = loop_prompt_until(label_prompt + "\n" + loop_prompt, lambda x: x in prompt_options)
+        if user_input == "q":
+            break
+        elif user_input == "b":
+            int_begin_input -= 1 # Point to previous review
+        elif user_input in ["n", ""]:
+            int_begin_input += 1 # Point to next review
+        elif user_input in ['0', '1']:
+            current_id = current_data[id_name]
+            # Process input and update DB
+            process_label_information(conn, 
+                                        labelled_column_name=labelled_column_name,
+                                        labelled_table_name=labelled_table_name,
+                                        review_id_column_name=id_name,
+                                        review_id_value=current_id,
+                                        user_input=user_input)
+            
+            int_begin_input += 1 # Pointing to next review
+        elif user_input == "s":
+            save_table_rows_with_non_null_column_to_parquet(conn=conn, 
+                                                            table_name=labelled_table_name,
+                                                            column_to_check_not_null=labelled_column_name,
+                                                            destination_directory= Path("G:/My Drive/Data/naver_search_results/"))
+    return
+
+def blog_labelling_loop(conn:duckdb.DuckDBPyConnection, 
+                       sampled_reviews:pd.DataFrame, 
+                       int_begin_input:int,
+                       labelled_column_name:str,
+                       id_name:str,
+                       labelled_table_name:str):
+    all_reviews_num = len(sampled_reviews)
+    while True:
+        clear_console()
+        print("-"*20 + " LABELLING LOOP "+ "-"*20)
+        print(f"Current review: {int_begin_input+1}/{all_reviews_num}")
+
+        if int_begin_input< 0 or int_begin_input > all_reviews_num -1:
+            print("OUT OF BOUNDS!")
+            break
+        # Retrieve data from that index
+        current_data = sampled_reviews.iloc[int_begin_input]
+        current_store_id = current_data["store_id"]
+        num_reviews_for_current_store = len(sampled_reviews[sampled_reviews["store_id"] == current_store_id])
+        print(f"Store ID: {current_store_id} | Reviews for this store in sample: {num_reviews_for_current_store}")
+        
+        # Retrieve the current label for the displayed review
+        current_label_value = current_data.get(labelled_column_name)
+        if pd.isna(current_label_value):
+            print("\nThis review has not been labeled yet.")
+            prompt_options = ['q', 'b', '0', '1', 's'] # 's' option to save the labelled result as a parquet
+            extra_prompt_text = ""
+        else:
+            label_display = "True" if current_label_value else "False"
+            print(f"\nPreviously labeled as: {labelled_column_name}: {label_display}")
+            prompt_options = ['q', 'b', 'n', '0', '1', "", 's'] # Add 'n' option (and equivalent "" option)
+            extra_prompt_text = "Enter 'n', or nothing to go to the next entry without changing the label. "
+        
+        blogpost_url = current_data["post_url"]
+        print("BLOG URL: ", blogpost_url)
+        print()
+        text = current_data["text"]
+        if len(text) >= 100:
+            show_text = text[:100] + "......"
+        else:
+            show_text = text
+        print(show_text)
+        print()
+        
+        print(current_data) # Print series form of row
+
+        print(f"You are labelling whether the review {labelled_column_name}")
+        # Prompt for navigating reviews
+        label_prompt = f"Enter 1 for {labelled_column_name}:True. Enter 0 for {labelled_column_name}:False."
+        loop_prompt = extra_prompt_text + "Enter 'q' to quit the program. Enter 'b' to move back to previous review: "
+        user_input = loop_prompt_until(label_prompt + "\n" + loop_prompt, lambda x: x in prompt_options)
+        if user_input == "q":
+            break
+        elif user_input == "b":
+            int_begin_input -= 1 # Point to previous review
+        elif user_input in ["n", ""]:
+            int_begin_input += 1 # Point to next review
+        elif user_input in ['0', '1']:
+            current_id = current_data[id_name]
+            # Process input and update DB
+            process_label_information(conn, 
+                                        labelled_column_name=labelled_column_name,
+                                        labelled_table_name=labelled_table_name,
+                                        review_id_column_name=id_name,
+                                        review_id_value=current_id,
+                                        user_input=user_input)
+            
+            int_begin_input += 1 # Pointing to next review
+        elif user_input == "s":
+            save_table_rows_with_non_null_column_to_parquet(conn=conn, 
+                                                            table_name=labelled_table_name,
+                                                            column_to_check_not_null=labelled_column_name,
+                                                            destination_directory= Path("G:/My Drive/Data/naver_search_results/"))
+    return
 
 # Simple input UI loop:
 #   - When going into a new restaurant, say that we're doing so, and display the URL
 #   - Show information about the review (text, date, author username)
-def main(db_path=Path(__file__).parent / ".." / "dataset" / "reviews.db",
+def main(db_path=Path(__file__).parent.parent / "reviews.db",
          restaurants_table_name= "restaurants",
          review_type:str= "map",
          labelled_column_name:str="is_advert",
@@ -287,10 +463,12 @@ def main(db_path=Path(__file__).parent / ".." / "dataset" / "reviews.db",
         table_name = "navermap_reviews"
         id_name = "review_id"
         date_column_name = "review_datetime"
+        labelling_loop = map_labelling_loop
     elif review_type in ["blog", "naverblog_reviews"]:
         table_name = "naverblog_reviews"
-        id_name = "post_id"
-        date_column_name = ""
+        id_name = "post_url"
+        date_column_name = "post_date"
+        labelling_loop = blog_labelling_loop
     else:
         assert review_type in ["map", "blog", "navermap_reviews", "naverblog_reviews"]
         return
@@ -298,7 +476,7 @@ def main(db_path=Path(__file__).parent / ".." / "dataset" / "reviews.db",
     print("--- LABELLER ---")
     print("LOADING..." + "\n"*3)
     # DB connection initialisation
-    with duckdb.connect(str(db_path)) as conn:
+    with duckdb.connect(db_path.as_posix()) as conn:
         labelled_table_name = f"{table_name}_labelled"
 
         if resample:
@@ -372,64 +550,73 @@ def main(db_path=Path(__file__).parent / ".." / "dataset" / "reviews.db",
         int_begin_input = int(user_input_start) if user_input_start else initial_start_index
 
         # Labelling Loop
-        while True:
-            clear_console()
-            print("-"*20 + " LABELLING LOOP "+ "-"*20)
-            print(f"Current review: {int_begin_input+1}/{all_reviews_num}")
+        labelling_loop(conn=conn,
+                       sampled_reviews=sampled_reviews,
+                       int_begin_input=int_begin_input,
+                       labelled_column_name=labelled_column_name,
+                       id_name=id_name,
+                       labelled_table_name=labelled_table_name)
+        # while True:
+        #     clear_console()
+        #     print("-"*20 + " LABELLING LOOP "+ "-"*20)
+        #     print(f"Current review: {int_begin_input+1}/{all_reviews_num}")
 
-            if int_begin_input< 0 or int_begin_input > all_reviews_num -1:
-                print("OUT OF BOUNDS!")
-                break
-            # Retrieve data from that index
-            current_data = sampled_reviews.iloc[int_begin_input]
-            current_store_id = current_data["store_id"]
-            num_reviews_for_current_store = len(sampled_reviews[sampled_reviews["store_id"] == current_store_id])
-            print(f"Store ID: {current_store_id} | Reviews for this store in sample: {num_reviews_for_current_store}")
+        #     if int_begin_input< 0 or int_begin_input > all_reviews_num -1:
+        #         print("OUT OF BOUNDS!")
+        #         break
+        #     # Retrieve data from that index
+        #     current_data = sampled_reviews.iloc[int_begin_input]
+        #     current_store_id = current_data["store_id"]
+        #     num_reviews_for_current_store = len(sampled_reviews[sampled_reviews["store_id"] == current_store_id])
+        #     print(f"Store ID: {current_store_id} | Reviews for this store in sample: {num_reviews_for_current_store}")
             
-            # Retrieve the current label for the displayed review
-            current_label_value = current_data.get(labelled_column_name)
-            if pd.isna(current_label_value):
-                print("\nThis review has not been labeled yet.")
-                prompt_options = ['q', 'b', '0', '1', 's']
-                extra_prompt_text = ""
-            else:
-                label_display = "True" if current_label_value else "False"
-                print(f"\nPreviously labeled as: {labelled_column_name}: {label_display}")
-                prompt_options = ['q', 'b', 'n', '0', '1', "", 's'] # Add 'n' option (and equivalent "" option)
-                extra_prompt_text = "Enter 'n', or nothing to go to the next entry without changing the label. "
+        #     # Retrieve the current label for the displayed review
+        #     current_label_value = current_data.get(labelled_column_name)
+        #     if pd.isna(current_label_value):
+        #         print("\nThis review has not been labeled yet.")
+        #         prompt_options = ['q', 'b', '0', '1', 's'] # 's' option to save the labelled result as a parquet
+        #         extra_prompt_text = ""
+        #     else:
+        #         label_display = "True" if current_label_value else "False"
+        #         print(f"\nPreviously labeled as: {labelled_column_name}: {label_display}")
+        #         prompt_options = ['q', 'b', 'n', '0', '1', "", 's'] # Add 'n' option (and equivalent "" option)
+        #         extra_prompt_text = "Enter 'n', or nothing to go to the next entry without changing the label. "
             
-            store_url = restaurant_page_url(current_data["store_id"])
-            print("Store Page URL: ", store_url)
-            print()
-            print(current_data["review_text"])
-            print()
+        #     store_url = restaurant_page_url(current_data["store_id"])
+        #     print("Store Page URL: ", store_url)
+        #     print()
+        #     print(current_data["review_text"])
+        #     print()
             
-            print(current_data) # Print series form of row
+        #     print(current_data) # Print series form of row
 
-            print(f"You are labelling whether the review {labelled_column_name}")
-            # Prompt for navigating reviews
-            label_prompt = f"Enter 1 for {labelled_column_name}:True. Enter 0 for {labelled_column_name}:False."
-            loop_prompt = extra_prompt_text + "Enter 'q' to quit the program. Enter 'b' to move back to previous review: "
-            user_input = loop_prompt_until(label_prompt + "\n" + loop_prompt, lambda x: x in prompt_options)
-            if user_input == "q":
-                break
-            elif user_input == "b":
-                int_begin_input -= 1 # Point to previous review
-            elif user_input in ["n", ""]:
-                int_begin_input += 1 # Point to next review
-            elif user_input in ['0', '1']:
-                current_id = current_data[id_name]
-                # Process input and update DB
-                process_label_information(conn, 
-                                          labelled_column_name=labelled_column_name,
-                                          labelled_table_name=labelled_table_name,
-                                          review_id_column_name=id_name,
-                                          review_id_value=current_id,
-                                          user_input=user_input)
+        #     print(f"You are labelling whether the review {labelled_column_name}")
+        #     # Prompt for navigating reviews
+        #     label_prompt = f"Enter 1 for {labelled_column_name}:True. Enter 0 for {labelled_column_name}:False."
+        #     loop_prompt = extra_prompt_text + "Enter 'q' to quit the program. Enter 'b' to move back to previous review: "
+        #     user_input = loop_prompt_until(label_prompt + "\n" + loop_prompt, lambda x: x in prompt_options)
+        #     if user_input == "q":
+        #         break
+        #     elif user_input == "b":
+        #         int_begin_input -= 1 # Point to previous review
+        #     elif user_input in ["n", ""]:
+        #         int_begin_input += 1 # Point to next review
+        #     elif user_input in ['0', '1']:
+        #         current_id = current_data[id_name]
+        #         # Process input and update DB
+        #         process_label_information(conn, 
+        #                                   labelled_column_name=labelled_column_name,
+        #                                   labelled_table_name=labelled_table_name,
+        #                                   review_id_column_name=id_name,
+        #                                   review_id_value=current_id,
+        #                                   user_input=user_input)
                 
-                int_begin_input += 1 # Pointing to next review
-            elif user_input == "s":
-                save_table_to_parquet(conn, labelled_table_name, Path("G:/My Drive/Data/naver_search_results/"))
+        #         int_begin_input += 1 # Pointing to next review
+        #     elif user_input == "s":
+        #         save_table_rows_with_non_null_column_to_parquet(conn=conn, 
+        #                                                         table_name=labelled_table_name,
+        #                                                         column_to_check_not_null=labelled_column_name,
+        #                                                         destination_directory= Path("G:/My Drive/Data/naver_search_results/"))
             
             
 
