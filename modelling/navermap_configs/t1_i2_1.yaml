@@ -7,7 +7,7 @@ text_preprocessing:
     max_tags: 5
     review_text_chunk_overlap: 50
     # fusion_embed_dim is critical and should match model_architecture.fusion_embed_dim
-    fusion_embed_dim: 768
+    fusion_embed_dim: 128
     attention_heads: 4
     dropout: 0.1 # Dropout for SimpleCrossAttention
 
@@ -18,11 +18,11 @@ image_preprocessing:
     max_images_per_sample: 5
     target_image_size: [224, 224]
     # fusion_embed_dim is critical and should match model_architecture.fusion_embed_dim
-    fusion_embed_dim: 768
+    fusion_embed_dim: 128
 
 model_architecture:
-  no_intermodal_attention: True
-  fusion_embed_dim: 768
+  no_intermodal_attention: False
+  fusion_embed_dim: 128
   attention_heads: 4 # For InterModalAttention
   attention_layers: 1 # For InterModalAttention
   classifier_hidden_dim: 384 # fusion_embed_dim // 2

@@ -2,6 +2,7 @@
 *.csv
 *.db
 *.parquet
-modelling/wandb
 secrets.toml
 .env
+__pycache__
+wandb
