@@ -1,11 +1,14 @@
 #%%
 import streamlit as st
 import duckdb
-from viz.restaurants_map_plot import plot_restaurants_on_map
-import pandas as pd
-from typing import Tuple
+from viz.main_map_view import main_map_view
+from viz.restaurant_detail_view import restaurant_detail_view
+# from viz.restaurants_map_plot import plot_restaurants_on_map, get_map_data
 # Set layout as wide
-st.set_page_config(layout="wide")
+st.set_page_config(
+    page_title="진품명품: 진짜 맛집 찾기",
+    layout="wide",
+    initial_sidebar_state="collapsed")
 
 # --- DuckDB Connection to R2 ---
 @st.cache_resource(ttl="1h") # Cache the DuckDB connection for up to 1 hour
@@ -47,7 +50,7 @@ def get_r2_duckdb_connection():
 
             # Perform a quick test query to ensure connection is live and attached DB is accessible
             con.execute("SELECT 1 FROM reviews.restaurants LIMIT 1;").fetchone()
-            st.success(f"Successfully connected to DuckDB file on R2 on attempt {attempt + 1}.")
+            # st.success(f"Successfully connected to DuckDB file on R2 on attempt {attempt + 1}.")
             return con # Return the live connection
 
         except Exception as e:
@@ -74,57 +77,23 @@ def get_gdrive_duckdb_connection():
     else:
         return con
     return None
-# --- Function to get map data from DuckDB ---
-def get_map_data(con:duckdb.DuckDBPyConnection) -> Tuple[pd.Series|None]:
-    """
-    Queries X_EPSG_5174(longitude), Y_EPSG_5174(latitude), store_name from table `restaurants`.
-    Returns columns as tuple of pd.Series.
-    """
-    table_name = "restaurants"
 
-    try:
-        query = f"""
-        SELECT
-            X_naver_WGS_84,
-            Y_naver_WGS_84,
-            store_name
-        FROM reviews.{table_name};
-        """
-        df = con.execute(query).fetchdf()
-
-        # Convert coordinate columns to numeric
-        df['X_naver_WGS_84'] = pd.to_numeric(df['X_naver_WGS_84'], errors='coerce')
-        df['Y_naver_WGS_84'] = pd.to_numeric(df['Y_naver_WGS_84'], errors='coerce')
-
-        # Drop rows where coordinates might have become NaN due to coercion
-        df.dropna(subset=['X_naver_WGS_84', 'Y_naver_WGS_84'], inplace=True)
-
-        lat = df["Y_naver_WGS_84"]
-        long =  df["X_naver_WGS_84"]
-        store_name = df["store_name"]
-        return lat, long, store_name
-    except Exception as e:
-        st.error(f"Error querying data for map from table '{table_name}': {e}")
-        return (None, None, None) # Return tuple of Nones if there's an error
 #%%
 #%%
 
 # --- Main Streamlit App Logic ---
 st.header("진품명품 : 진짜 맛집 찾기")
 
+if 'current_page' not in st.session_state:
+    st.session_state.current_page = "main_map" # "main_map" / "detail_view"
+if 'selected_restaurant' not in st.session_state:
+    st.session_state.selected_restaurant = None
 # Get the cached DuckDB connection
 con = get_r2_duckdb_connection()
 # con = get_gdrive_duckdb_connection() # For development
 
 if con: # Only proceed if connection was successful
-
-    # --- Fetch and Plot Map Data ---
-    st.subheader("연남동 일반 음식점")
-    lat, long, store_name = get_map_data(con) # Use the 'con' guaranteed to be live
-
-    if (lat is not None) and (long is not None) and (store_name is not None):
-        map_figure = plot_restaurants_on_map(lat, long, store_name)
-        if map_figure:
-            st.plotly_chart(map_figure, use_container_width=False) # THIS IS WHERE THE MAP IS SHOWN
-    else:
-        st.error("Could not retrieve data to plot the map. Please check the table name 'restaurants' and data availability.")
+    if st.session_state.current_page == "main_map":
+        main_map_view(con)
+    elif st.session_state.current_page == "detail_view":
+        restaurant_detail_view(con)
