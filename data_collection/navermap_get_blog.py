@@ -532,6 +532,7 @@ def initialise_blog_reviews(conn:duckdb.DuckDBPyConnection,
     conn.execute(q1)
     q2 = f"""CREATE OR REPLACE TABLE {table_name} (
             post_url VARCHAR PRIMARY KEY,
+            store_id VARCHAR,
             editorversion VARCHAR,
             blogname VARCHAR,
             commentcount INTEGER,
@@ -564,9 +565,47 @@ def get_blog_reviews_from_db(table_name:str,
     df = conn.sql(query).df()
     return df
 
+def add_store_id_to_existing_blog_reviews(
+    blog_reviews_path: Path,
+    blog_urls_path: Path,
+    new_blog_reviews_path:Path,
+    table_name: str = "naverblog_reviews"
+):
+    """
+    Adds store_id to naverblog_reviews parquet
+    """
+    print(f"Starting to add 'store_id' to '{table_name}' table.")
+
+    # 1. Load blog_urls.pkl
+    if not blog_urls_path.exists():
+        print(f"Error: blog_urls.pkl not found at {blog_urls_path}. Cannot proceed.")
+        return
+    
+    with open(blog_urls_path, "rb") as rf:
+        blog_urls_map: Dict[str, List[str]] = pickle.load(rf)
+    print(f"Loaded {len(blog_urls_map)} store IDs and their associated URLs from {blog_urls_path}.")
+
+    # 2. Create a flat URL-to-Store ID mapping for faster lookup
+    url_to_store_id: Dict[str, str] = {}
+    for store_id, urls in blog_urls_map.items():
+        for url in urls:
+            url_to_store_id[url] = store_id
+    print(f"Created mapping for {len(url_to_store_id)} unique blog URLs to store IDs.")
+
+    try:
+        blog_reviews_og = pd.read_parquet(blog_reviews_path)
+        blog_reviews_new = blog_reviews_og.copy()
+        blog_reviews_new["store_id"] = blog_reviews_og["post_url"].apply(lambda x: url_to_store_id[x])
+        blog_reviews_new.to_parquet(new_blog_reviews_path)
+    except Exception as e:
+        print("Unexpected error: ", e)
+        return
+
+    print("Finished adding 'store_id' to blog reviews. Saved new parquet")
+
 def main(db_path = Path(__file__).parent.parent / "dataset/reviews_temp.db",
          blog_urls_path = Path(r"G:\My Drive\Data\naver_search_results\naverblog_urls.pkl"),
-         blog_reviews_path = Path(r"G:\My Drive\Data\naver_search_results\naverblog_reviews.parquet.gzip"),
+         blog_reviews_path = Path(r"G:\My Drive\Data\naver_search_results\naverblog_reviews.parquet"),
          db_initialisation = False):
     CACHE_NAME = "naverblog.sqlite"
     CWD = Path.cwd()
@@ -613,5 +652,20 @@ def main(db_path = Path(__file__).parent.parent / "dataset/reviews_temp.db",
             driver.quit()
 #%%
 if __name__ == "__main__":
-    main(db_initialisation=False) 
+    DB_PATH = Path(__file__).parent.parent / "reviews.db"
+    OG_BLOG_REVIEW_PATH = Path(r"G:\My Drive\Data\naver_search_results\naverblog_reviews.parquet")
+    NEW_BLOG_REVIEW_PATH = Path(Path(r"G:\My Drive\Data\naver_search_results\naverblog_reviews_store_id.parquet"))
+    BLOG_URL_PATH = Path(r"G:\My Drive\Data\naver_search_results\naverblog_urls.pkl")
+    TABLE_NAME = "naverblog_reviews"
+    # main(db_path = DB_PATH,
+    #      blog_urls_path = BLOG_URL_PATH,
+    #      blog_reviews_path = OG_BLOG_REVIEW_PATH,
+    #      db_initialisation = False)
+    add_store_id_to_existing_blog_reviews(blog_reviews_path= OG_BLOG_REVIEW_PATH,
+                                          blog_urls_path=BLOG_URL_PATH,
+                                          new_blog_reviews_path=NEW_BLOG_REVIEW_PATH,
+                                          table_name=TABLE_NAME)
     
+    
+
+# %%
