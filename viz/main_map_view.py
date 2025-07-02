@@ -31,4 +31,5 @@ def main_map_view(con):
             st.warning("해당 마커에 대한 데이터를 찾을 수 없습니다.")
             st.write("Full selection event data (check your console):")
             st.json(event.selection.points[0]) # Display the first point's data in the app for inspection
+    return map_df
     
