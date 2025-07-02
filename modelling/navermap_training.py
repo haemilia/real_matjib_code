@@ -162,7 +162,7 @@ def evaluate_epoch(model, dataloader, criterion, device):
     all_probabilities = []
     all_labels = []
 
-    misclassified_samples_data = []
+    misclassified_samples_data = [] # To collect misclassified samples for this epoch
 
     with torch.no_grad():
         for batch_idx, batch_data in enumerate(tqdm(dataloader, desc="Validation")):
@@ -173,7 +173,7 @@ def evaluate_epoch(model, dataloader, criterion, device):
                 else:
                     inputs[key] = value
 
-            labels = inputs.pop('labels')
+            labels = inputs.pop('labels').to(device) # Labels tensor moved to device
 
             outputs = model(inputs)
             loss = criterion(outputs.squeeze(1), labels)
@@ -188,15 +188,42 @@ def evaluate_epoch(model, dataloader, criterion, device):
 
             incorrect_mask = (predictions != labels).cpu().numpy()
 
+            # --- Safely retrieve all relevant lists from batch_data for the current batch ---
+            current_batch_size_in_loop = labels.shape[0]
+
+            # Ensure they are padded with 'N/A' or empty lists if missing or shorter
+            safe_review_ids = batch_data.get('review_id', ['N/A'] * current_batch_size_in_loop)
+            if len(safe_review_ids) < current_batch_size_in_loop:
+                safe_review_ids.extend(['N/A'] * (current_batch_size_in_loop - len(safe_review_ids)))
+
+            safe_review_texts = batch_data.get('review_text', ['N/A'] * current_batch_size_in_loop)
+            if len(safe_review_texts) < current_batch_size_in_loop:
+                safe_review_texts.extend(['N/A'] * (current_batch_size_in_loop - len(safe_review_texts)))
+
+            safe_store_naver_names = batch_data.get('store_naver_name', ['N/A'] * current_batch_size_in_loop)
+            if len(safe_store_naver_names) < current_batch_size_in_loop:
+                safe_store_naver_names.extend(['N/A'] * (current_batch_size_in_loop - len(safe_store_naver_names)))
+
+            # For category and image_links, the default should be an empty list for each sample
+            safe_categories = batch_data.get('category', [[] for _ in range(current_batch_size_in_loop)])
+            if len(safe_categories) < current_batch_size_in_loop:
+                safe_categories.extend([[] for _ in range(current_batch_size_in_loop - len(safe_categories))])
+
+            safe_image_links = batch_data.get('image_links', [[] for _ in range(current_batch_size_in_loop)])
+            if len(safe_image_links) < current_batch_size_in_loop:
+                safe_image_links.extend([[] for _ in range(current_batch_size_in_loop - len(safe_image_links))])
+            # --- End of safe retrieval ---
+
             for i, is_incorrect in enumerate(incorrect_mask):
                 if is_incorrect:
                     sample_info = {
                         "batch_idx_in_epoch": batch_idx,
                         "sample_idx_in_batch": i,
-                        "review_text": batch_data.get('review_text', ['N/A'])[i],
-                        "store_naver_name": batch_data.get('store_naver_name', ['N/A'])[i],
-                        "category": batch_data.get('category', [[]])[i], # Assuming category can be a list
-                        "image_links": batch_data.get('image_links', [[]])[i], # List of paths/strings
+                        "review_id": safe_review_ids[i], # Use safely retrieved data
+                        "review_text": safe_review_texts[i],
+                        "store_naver_name": safe_store_naver_names[i],
+                        "category": safe_categories[i],
+                        "image_links": safe_image_links[i],
                         "actual_label": int(labels[i].item()),
                         "predicted_label": int(predictions[i].item()),
                         "predicted_probability": float(probabilities[i].item())
@@ -211,22 +238,23 @@ def evaluate_epoch(model, dataloader, criterion, device):
 
     accuracy = np.mean(all_predictions_np == all_labels_np)
 
+    # Handle cases where only one class is present in labels to avoid errors in metrics
     if len(np.unique(all_labels_np)) < 2:
         precision = np.nan
         recall = np.nan
         f1 = np.nan
         roc_auc = np.nan
         pr_auc = np.nan
-
         print("Warning: Only one class present in validation labels. Precision, Recall, F1, ROC-AUC, PR-AUC will be NaN.")
     else:
-        precision = precision_score(all_labels_np, all_predictions_np)
-        recall = recall_score(all_labels_np, all_predictions_np)
-        f1 = f1_score(all_labels_np, all_predictions_np)
+        precision = precision_score(all_labels_np, all_predictions_np, zero_division=0)
+        recall = recall_score(all_labels_np, all_predictions_np, zero_division=0)
+        f1 = f1_score(all_labels_np, all_predictions_np, zero_division=0)
         roc_auc = roc_auc_score(all_labels_np, all_probabilities_np)
         pr_auc = average_precision_score(all_labels_np, all_probabilities_np)
 
-    return avg_loss, accuracy, precision, recall, f1, roc_auc, pr_auc, misclassified_samples_data
+    # IMPORTANT: Returning all_predictions_np and all_labels_np for F-beta calculation in train_model_with_config
+    return avg_loss, accuracy, precision, recall, f1, roc_auc, pr_auc, misclassified_samples_data, all_predictions_np, all_labels_np
 def evaluate_on_test_set(test_df: pd.DataFrame, model_path: Path):
     """
     Evaluates a trained model on a given test DataFrame and returns detailed metrics
@@ -423,6 +451,20 @@ def train_model_with_config(config=None, train_df=None, val_df=None, test_df=Non
 
         current_combination = (current_text_strategy, current_image_strategy, current_no_intermodal_attention)
 
+        valid_combinations = [
+            ("option3_cross_attention_mean_pool", "option3_global_max_pool", True), # t3_i3_0
+            ("option1_cross_attention_results", "option2_variable_wise_mean_pool", True), # t1_i2_0
+            ("option1_cross_attention_results", "option4_variable_wise_max_pool", True), # t1_i4_0
+            ("option1_cross_attention_results", "option4_variable_wise_max_pool", False) # t1_i4_1
+        ]
+
+        current_combination = (current_text_strategy, current_image_strategy, current_no_intermodal_attention)
+
+        if current_combination not in valid_combinations:
+            print(f"Skipping invalid combination for sweep: {current_combination}")
+            run.log({"status": "skipped", "reason": "invalid_combination"})
+            return # Exit this sweep trial
+        
         print(f"Starting sweep trial for combination: {current_combination}")
         print(f"Current config: {config}")
 
@@ -500,7 +542,7 @@ def train_model_with_config(config=None, train_df=None, val_df=None, test_df=Non
         print("WandB is watching model parameters and gradients.")
         
         num_epochs = model_config_for_NaverMapModel['training']['num_epochs']
-        best_val_fbeta = -1.0
+        best_val_f1 = -1.0
         best_epoch_idx = -1
         best_val_loss_at_best_fbeta = float('inf')
         best_model_filename = f"model_sweep_{run.id}_best_fbeta.pth"
@@ -533,25 +575,25 @@ def train_model_with_config(config=None, train_df=None, val_df=None, test_df=Non
                 "val_pr_auc": val_pr_auc,
                 "val_fbeta_score": val_fbeta_0_5
             })
-            if val_fbeta_0_5 > best_val_fbeta:
-                best_val_fbeta = val_fbeta_0_5
+            if val_f1 > best_val_f1:
+                best_val_f1 = val_f1
                 best_epoch_idx = epoch
-                best_val_loss_at_best_fbeta = val_loss
+                best_val_loss_at_best_f1 = val_loss
                 checkpoint = {
                     'epoch': best_epoch_idx,
                     'model_state_dict': model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
-                    'best_val_fbeta': best_val_fbeta,
-                    'val_loss_at_best_fbeta': val_loss,
+                    'best_val_f1': best_val_f1,
+                    'val_loss_at_best_f1': val_loss,
                     'config': model_config_for_NaverMapModel
                 }
                 torch.save(checkpoint, best_model_save_path_for_config)
-                print(f"*** New best model saved! Fbeta: {best_val_fbeta:.4f} at Epoch {best_epoch_idx}. Overwriting {best_model_filename} ***")
-                run.summary["best_val_fbeta_achieved"] = best_val_fbeta
+                print(f"*** New best model saved! F1: {best_val_f1:.4f} at Epoch {best_epoch_idx}. Overwriting {best_model_filename} ***")
+                run.summary["best_val_f1_achieved"] = best_val_f1
                 run.summary["best_val_epoch"] = best_epoch_idx
-                run.summary["best_val_loss_at_best_fbeta"] = best_val_loss_at_best_fbeta
+                run.summary["best_val_loss_at_best_f1"] = best_val_loss_at_best_f1
         print("\n--- Training Complete ---")
-        print(f"Best Validation F-beta Score for this run: {best_val_fbeta:.4f} at Epoch {best_epoch_idx}")
+        print(f"Best Validation F1 Score for this run: {best_val_f1:.4f} at Epoch {best_epoch_idx}")
         print(f"\n--- Evaluating the best model ({best_model_save_path_for_config.name}) on the Final Test Set ---")
         test_metrics, test_misclassified_df, all_predictions_np, all_probabilities_np, all_labels_np = \
             evaluate_on_test_set(test_df, best_model_save_path_for_config)
@@ -876,9 +918,9 @@ def hyperparameter_optimization():
 
     # --- Define the Sweep Configuration ---
     sweep_config = {
-        "name": "navermap-review-hpo-exp3-final",
+        "name": "navermap-review-hpo-exp3-local",
         "method": "bayes", # Using Bayesian Optimization
-        "metric": {"name": "val_fbeta_score", "goal": "maximize"}, # Maximize F-beta score
+        "metric": {"name": "val_f1", "goal": "maximize"}, # Maximize F1 score
         "parameters": {
             # Text and Image Preprocessing Strategies (categorical choices)
             "text_preprocessing.strategy": {
@@ -888,11 +930,11 @@ def hyperparameter_optimization():
 
             # Model Architecture parameters
             "model_architecture.no_intermodal_attention": {"values": [True, False]},
-            "model_architecture.fusion_embed_dim": {"values": [128, 256, 384, 512, 768]},
+            "model_architecture.fusion_embed_dim": {"values": [128, 256, 384]},
             "model_architecture.dropout": {"distribution": "uniform", "min": 0.0, "max": 0.3},
-            "model_architecture.classifier_hidden_dim_ratio": {"values": [0.5, 1.0, 2.0]}, # Ratio to fusion_embed_dim
-            "model_architecture.attention_heads": {"values": [2, 4, 8]}, # Only applies if no_intermodal_attention is False
-            "model_architecture.attention_layers": {"values": [1, 2, 3]}, # Only applies if no_intermodal_attention is False
+            "model_architecture.classifier_hidden_dim_ratio": {"values": [0.1, 0.5, 1.0]}, # Ratio to fusion_embed_dim
+            "model_architecture.attention_heads": {"values": [2, 4]}, # Only applies if no_intermodal_attention is False
+            "model_architecture.attention_layers": {"values": [1, 2]}, # Only applies if no_intermodal_attention is False
 
             # Training parameters
             "training.batch_size": {"values": [8, 16, 32]},
@@ -918,14 +960,15 @@ def hyperparameter_optimization():
             val_df=val_df_for_sweeps,
             test_df=final_test_df
         ),
-        count=20 # Set a reasonable number of trials for the sweep. You can adjust this.
+        count=30 # Set a reasonable number of trials for the sweep. You can adjust this.
                 # Given 4 combinations and Bayesian search, 20-50 trials is a good start.
     )
 
     print("\nWandB Sweep execution complete. Check your WandB dashboard for results.")
 
 if __name__ == "__main__":
-    # test_df= pd.read_parquet(DATADIR / "navermap_reviews_test.parquet")
+    test_df= pd.read_parquet(DATADIR / "navermap_reviews_test.parquet")
+    # evaluate_on_test_set(test_df)
     # main(test_df, Path(__file__).parent / "navermap_configs") # for training experiments
     hyperparameter_optimization()
 

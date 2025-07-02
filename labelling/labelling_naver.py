@@ -12,7 +12,7 @@ def parse_arguments()-> argparse.Namespace:
                                      description= "Program that helps user to label review data.",
                                      )
     parser.add_argument("-r", "--review_type",
-                        choices=["map", "navermap_reviews", "blog", "naverblog_reviews"],
+                        choices=["map", "navermap_reviews", "blog", "naverblog_reviews", "maptest"],
                         default="map",
                         help="Option to decide which review dataset to use; default choice is map")
     parser.add_argument("-rs", "--resample",
@@ -406,7 +406,10 @@ def blog_labelling_loop(conn:duckdb.DuckDBPyConnection,
             print(f"\nPreviously labeled as: {labelled_column_name}: {label_display}")
             prompt_options = ['q', 'b', 'n', '0', '1', "", 's'] # Add 'n' option (and equivalent "" option)
             extra_prompt_text = "Enter 'n', or nothing to go to the next entry without changing the label. "
-        
+            
+        store_url = restaurant_page_url(current_data["store_id"])
+        print("Store Page URL: ", store_url)
+        print()
         blogpost_url = current_data["post_url"]
         print("BLOG URL: ", blogpost_url)
         print()
@@ -452,7 +455,7 @@ def blog_labelling_loop(conn:duckdb.DuckDBPyConnection,
 # Simple input UI loop:
 #   - When going into a new restaurant, say that we're doing so, and display the URL
 #   - Show information about the review (text, date, author username)
-def main(db_path=Path(__file__).parent.parent / "reviews.db",
+def main(db_path=Path(__file__).parent.parent / "reviews_local.db",
          restaurants_table_name= "restaurants",
          review_type:str= "map",
          labelled_column_name:str="is_advert",
@@ -469,6 +472,11 @@ def main(db_path=Path(__file__).parent.parent / "reviews.db",
         id_name = "post_url"
         date_column_name = "post_date"
         labelling_loop = blog_labelling_loop
+    elif review_type in ["maptest"]:
+        table_name = "navermap_test"
+        id_name = "review_id"
+        date_column_name = "review_datetime"
+        labelling_loop = map_labelling_loop
     else:
         assert review_type in ["map", "blog", "navermap_reviews", "naverblog_reviews"]
         return
@@ -478,9 +486,13 @@ def main(db_path=Path(__file__).parent.parent / "reviews.db",
     # DB connection initialisation
     with duckdb.connect(db_path.as_posix()) as conn:
         labelled_table_name = f"{table_name}_labelled"
+        
 
         if resample:
             needs_new_sample = True
+        elif review_type == "maptest":
+            needs_new_sample = False
+            labelled_table_name = table_name
         else:
             needs_new_sample = we_need_sampling(conn, labelled_table_name)
 
