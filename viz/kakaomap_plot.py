@@ -3,6 +3,7 @@ import plotly.graph_objects as go
 import ast
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
+from pathlib import Path
 
 def get_kakaomap(conn):
     query = """
@@ -161,7 +162,7 @@ def plot_kakaomap(
 
     #워드클라우드
     wordcloud = WordCloud(
-        font_path =r"C:\Users\QQQ\AppData\Local\Microsoft\Windows\Fonts\NanumGothic.ttf",
+        font_path =Path(__file__).parent / "NanumGothic.ttf",
         background_color='white',   #default: black
         random_state=42 #단어 위치 고정
     ).generate(wordcloud_text)

@@ -173,7 +173,7 @@ def convert_dir_to_blog_url(dir:str):
     return b
 
 def download_images_in_dataset_only(dataset_path:Path, import_columnnames:Dict[str, List[str]],
-                                    imagedir = Path(__file__).parent.parent.parent / "images",
+                                    imagedir = Path(__file__).parent.parent.parent / "images_blog",
                                     output_datadir=Path("G:/My Drive/Data/naver_search_results/")):
     # Access the columns containing image urls  + other necessary information from dataset parquet file
     review_id_name = import_columnnames["id"]
@@ -189,13 +189,13 @@ def download_images_in_dataset_only(dataset_path:Path, import_columnnames:Dict[s
     for _, row in tqdm(dataset.iterrows()):
         review_id = str(row[review_id_name[0]])
         dataset_image_paths[review_id] = {}
-        destination_dir = imagedir / review_id
+        destination_dir = imagedir / convert_blog_url_to_dir(review_id)
         for image_col in image_col_names:
             dataset_image_paths[review_id][image_col] = []
             img_list = row[image_col]
             if img_list is not None and len(img_list) > 0:
                 for i, img_url in enumerate(img_list):
-                    base_filename = f"{review_id}_{image_col}_{i}"
+                    base_filename = f"{convert_blog_url_to_dir(review_id)}_{image_col}_{i}"
                     downloaded_path = download_image(image_url=img_url,
                                              destination_directory=destination_dir,
                                              base_filename=base_filename)
@@ -317,13 +317,14 @@ def main(datadir_path=Path("G:/My Drive/Data/naver_search_results/"),
     with open(datadir_path/"naverblog_reviews_image_local.pkl", "wb") as wf:
         pickle.dump(blog_image_paths, wf)
     del naverblog_reviews
-
+#%%
 if __name__ == "__main__":
     # main()
     datadir_path=Path("G:/My Drive/Data/naver_search_results/")
     import_columnnames = {
-        "id": ["review_id"],
-        "images": ["image_links", "video_thumbnail_links"]
+        "id": ["post_url"],
+        "images": ["img_url", "sticker_url", "vid_thumb_url"]
     }
-    download_images_in_dataset_only(dataset_path=datadir_path/"navermap_reviews_labelled_only.parquet",
+    download_images_in_dataset_only(dataset_path=datadir_path/"naverblog_reviews.parquet",
                                     import_columnnames=import_columnnames)
+

@@ -38,10 +38,10 @@ def convert_epsg5174_to_wgs84(x:pd.Series, y:pd.Series) -> Tuple[Any, Any]:
         print(f"An error occurred during the transformation: {e}")
         return None, None
     
-def get_map_data(con:duckdb.DuckDBPyConnection) -> Tuple[pd.Series|None]:
+def get_map_data(con:duckdb.DuckDBPyConnection) -> pd.DataFrame|None:
     """
     Queries X_EPSG_5174(longitude), Y_EPSG_5174(latitude), store_name from table `restaurants`.
-    Returns columns as tuple of pd.Series.
+    Returns columns as a DataFrame. Returns None if there's an error.
     """
     table_name = "restaurants"
 
@@ -69,7 +69,7 @@ def get_map_data(con:duckdb.DuckDBPyConnection) -> Tuple[pd.Series|None]:
         return result_df
     except Exception as e:
         st.error(f"Error querying data for map from table '{table_name}': {e}")
-        return (None, None, None) # Return tuple of Nones if there's an error
+        return None # Return tuple of Nones if there's an error
     
 
 def plot_restaurants_on_map(

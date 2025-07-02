@@ -1,7 +1,7 @@
 import streamlit as st
-from viz.restaurants_map_plot import get_map_data, plot_restaurants_on_map
+from viz.restaurants_map_plot import plot_restaurants_on_map, get_map_data
 
-def restaurant_detail_view(con):
+def restaurant_detail_view(con, map_df=None):
     st.write(f"# {st.session_state.selected_restaurant}")
     st.markdown("---")
     # Add a prominent "Back" button at the top of the detail page
@@ -12,8 +12,8 @@ def restaurant_detail_view(con):
     col_map, col_tabs = st.columns([1, 4]) # 지도가 1/5, 상세 페이지가 4/5 차지
     with col_map:
         st.write(f"### 선택된 음식점: {st.session_state.selected_restaurant}")
-        
-        map_df = get_map_data(con)
+        if map_df is None:
+            map_df = get_map_data(con)
         detail_map_fig = plot_restaurants_on_map(map_df,
                                                  active_restaurant=st.session_state.selected_restaurant)
         st.plotly_chart(detail_map_fig,
