@@ -1,14 +1,17 @@
-#module python file code
 import plotly.graph_objects as go
-import ast
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
+import ast
+import pandas as pd
+import re
+from pathlib import Path
 
+#1. duckdb 파일 연결, query문 함수
 def get_kakaomap(conn):
     query = """
         SELECT
-            r.store_name,
-            l.predicted_label, l.rating, l.processed_cleaned, l.kakaomap_id
+            r.store_name, r.road_address,
+            l.predicted_label, l.kakaomap_id, l.rating, l.reviewer_name, l.review_text, l.photo_url, l.processed_cleaned, l.realreview_prob, l.review_date
         FROM
             kakaomap_reviews_labelled l
         JOIN
@@ -18,51 +21,140 @@ def get_kakaomap(conn):
     """
     df_kakaomap = conn.execute(query).df()
     df_kakaomap['predicted_label'] = df_kakaomap['predicted_label'].map({0:'홍보성', 1:'진정성'})
-
+    df_kakaomap['review_date'] = pd.to_datetime(df_kakaomap['review_date']).dt.strftime('%Y-%m-%d')
+    
     #'스시정인'이라는 음식점으로 test
     store_name = '스시정인'
-    df_test = df_kakaomap.query("store_name == @store_name")
+    df_store = df_kakaomap.query("store_name == @store_name").reset_index()
+    store_name = re.sub(r'\(.*?\)', '', store_name)  #괄호와 그 안의 내용 제거
     
     #파이차트에 쓰일 변수
-    pre_label_name = list(df_test.predicted_label.unique()) #홍보성/진정성
-    pre_label_value = df_test['predicted_label'].value_counts() #라벨링값
+    pre_label_name = list(df_store.predicted_label.unique()) #홍보성/진정성
+    pre_label_value = df_store['predicted_label'].value_counts() #라벨링값
     pie_label_list = [pre_label_name, pre_label_value]
 
     #리뷰가 '진정성'이 있는 것들만 필터링
-    df_test_real = df_test.query("predicted_label == '진정성'")
+    df_store_real = df_store.query("predicted_label == '진정성'")
+
+    if df_store_real.empty: #'진정성' 리뷰가 없을 떄
+        bar_rating_list = []    #막대그래프 변수
+        wordcloud_text = '' #워드클라우드 변수
+        real_rating = ''    #진정성 리뷰 평점 변수
     
-    #카카오맵 id
-    kakaomap_id = df_test.kakaomap_id.unique().item()
+    else:
+        #막대그래프에 쓰일 변수
+        rating_xlabel = sorted(list(df_store_real.rating.unique()))  #x축 라벨
+        rating_ylabel = sorted(df_store_real.rating.value_counts())  #y축 값
+        bar_rating_list = [rating_xlabel, rating_ylabel]
 
-    #막대그래프에 쓰일 변수
-    rating_xlabel = sorted(list(df_test_real.rating.unique()))  #x축 라벨
-    rating_ylabel = sorted(df_test_real.rating.value_counts())  #y축 값
-    bar_rating_list = [rating_xlabel, rating_ylabel]
+        #워드클라우드
+        wordcloud_review = df_store_real.processed_cleaned
 
-    wordcloud_review = df_test_real.processed_cleaned
+        #모든 리뷰의 토큰을 하나의 리스트로 합침
+        all_words = []
+        for review in wordcloud_review:
+            if isinstance(review, str):
+                word_list = ast.literal_eval(review)
+                all_words.extend(word_list)
+            elif isinstance(review, list):
+                all_words.extend(review)
 
-    #모든 리뷰의 토큰을 하나의 리스트로 합침
-    all_words = []
-    for review in wordcloud_review:
-        if isinstance(review, str):
-            word_list = ast.literal_eval(review)
-            all_words.extend(word_list)
-        elif isinstance(review, list):
-            all_words.extend(review)
+        #하나의 텍스트로 합치기
+        wordcloud_text = ' '.join(all_words)
 
-    #하나의 텍스트로 합치기
-    wordcloud_text = ' '.join(all_words)
-
+        #상세페이지 칸에 쓰일 것
+        real_rating = round(df_store_real.rating.mean(), 1)  #진정성 리뷰의 평점
+    
     #상세페이지 칸에 쓰일 것들
-    all_rating = round(df_test.rating.mean(), 1)    #전체 리뷰의 평점
-    real_rating = round(df_test_real.rating.mean(), 1)  #진정성 리뷰의 평점
-    detail_rating_list = [all_rating, real_rating]
+    kakaomap_id = df_store.kakaomap_id[0]   #카카오맵 id
+    road_address = df_store.road_address[0] #도로명 주소
+    all_rating = round(df_store.rating.mean(), 1)    #전체 리뷰의 평점
 
-    return pie_label_list, bar_rating_list, wordcloud_text, kakaomap_id, store_name, detail_rating_list
+    df_store_detail = df_store.iloc[:, 4:].sort_values(
+        by=['realreview_prob', 'photo_url', 'review_date'], #정렬 기준: '진정성 리뷰일 확률' ＞ '이미지 링크' ＞ '리뷰 작성일'
+        ascending=[False, False, False]
+    ).reset_index(drop=True).iloc[:2]
 
-#pie_label_list, bar_rating_list, wordcloud_text, kakaomap_id, store_name, detail_rating_list = get_kakaomap(conn)
+    reviewer_name = reviewer_name = list(df_store_detail.reviewer_name) #리뷰어 네임
 
-#평점만큼 별 개수 출력하는 함수
+    #리뷰 내용
+    review_text = []
+    for review in df_store_detail.review_text:
+        if not review:  #리뷰 내용이 없을 경우
+            review_text.append('')
+        else:
+            review_text.append(review)
+
+    reviewer_rating = df_store_detail.rating #리뷰어 평점
+    review_date = df_store_detail.review_date   #리뷰 작성일
+
+    #리뷰 이미지 링크
+    photo_url = []
+    for url in df_store_detail.photo_url:
+        if url:
+            urls = url.split(',')   #쉼표로 url 분리
+            urls = ['https:' + url for url in urls] #각 url에 https: 붙이기
+            urls = urls[:2] #2개만 가져오기
+            photo_url.append(urls)
+        else:   #이미지 링크가 없을 경우
+            photo_url.append('')
+
+    detail_list = [kakaomap_id, road_address, all_rating, real_rating, reviewer_name, review_text, reviewer_rating, review_date, photo_url]
+
+    return pie_label_list, bar_rating_list, wordcloud_text, store_name, detail_list
+
+#2. 차트 함수
+def make_chart(pie_label_list, bar_rating_list, wordcloud_text):
+    #파이차트
+    pie_fig = go.Figure()
+    pie_fig.add_trace(go.Pie(
+        labels=pie_label_list[0],
+        values=pie_label_list[1],
+        marker=dict(colors=['#fee500', "#fbef85"])
+    ))
+    pie_fig.update_traces(textposition='inside', textinfo='percent+label')
+    pie_fig.update_layout(
+        title=dict(text='<b>홍보성과 진정성 여부</b>', xanchor='center', x=.5, font=dict(size=20)),
+        legend=dict(orientation='h', xanchor='center', x=.5, yanchor='bottom', y=-.2)
+    )
+
+    #'진정성' 리뷰가 존재하여 막대그래프 변수랑 워드클라우드 변수가 있을 경우
+    if bar_rating_list and wordcloud_text:
+        #막대그래프
+        bar_fig = go.Figure()
+        bar_fig.add_trace(go.Bar(
+            x=bar_rating_list[0],
+            y=bar_rating_list[1],
+            marker_color="#402424",
+        ))
+        bar_fig.update_layout(
+            title=dict(text='<b>진정성 리뷰 평점 분포도</b>', xanchor='center', x=.5, font=dict(size=20))
+        )
+        bar_fig.update_xaxes(
+            tickmode='array',
+            tickvals=[1, 2, 3, 4, 5],
+            ticktext=['1', '2', '3', '4', '5'],
+            range=[0.5, 5.5]
+        )
+
+        #폰트 path
+        font_path = Path(__file__).parent / "NanumGothic.ttf",
+        wordcloud = WordCloud(
+            font_path=font_path,
+            background_color='white',
+            random_state=42
+        ).generate(wordcloud_text)
+        wordcloud_fig = plt.figure()
+        plt.imshow(wordcloud, interpolation='bilinear')
+        plt.axis('off')
+
+    else:   #없을 경우
+        bar_fig = ''
+        wordcloud_fig = ''
+
+    return pie_fig, bar_fig, wordcloud_fig 
+
+#3. 리뷰 평점 별 아이콘 함수
 def rating_stars(rating_avg):
     #평점값만큼 별 출력(.5~.7은 덜 꽉찬 별 추가, 나머지는 반올림)
     full_stars = int(rating_avg)
@@ -88,186 +180,192 @@ def rating_stars(rating_avg):
 
     return results
 
-#차트 생성 함수
-def plot_kakaomap(
-        #파이차트에 쓰일 범례, 값, #히스토그램에 쓰일 평점값, 상세페이지 url에 넣을 id, 음식점명, 별점 평균
-        pie_label_list, bar_rating_list, wordcloud_text, kakaomap_id, store_name, detail_rating_list
-):
-    #st.set_page_config(layout="wide")   #화면 넓게
+#4. 상세컬럼에 작성할 내용 함수
+def unpack_detail_list(detail_list):
+    """
+    반환값: (kakaomap_id, road_address, all_rating_avg, real_rating_avg,
+           reviewer_name, review_text, reviewer_rating, review_date, img_url_list, url,
+           all_rating_avg_stars, real_rating_avg_stars)
+    """
+    kakaomap_id = detail_list[0]    #음식점 카카오맵 id
+    road_address = detail_list[1]   #도로명 주소
+    all_rating_avg = detail_list[2] #전체 리뷰 평점
+    real_rating_avg = detail_list[3]    #'진정성' 리뷰 평점
+    reviewer_name = detail_list[4]  #리뷰어 닉네임
+    review_text = detail_list[5]    #리뷰 내용
+    reviewer_rating = detail_list[6]    #리뷰어가 남긴 평점
+    review_date = detail_list[7]    #리뷰 작성일
+    img_url_list = detail_list[8]   #리뷰 이미지 url
 
-    #카카오맵 타이틀..?
-    #st.header('@@음식점 카카오맵 리뷰')
+    url = f'https://place.map.kakao.com/{kakaomap_id}'  #음식점 카카오맵 리뷰 url
+    all_rating_avg_stars = rating_stars(all_rating_avg) #전체 리뷰 평점 평균의 별
 
-    #파이차트(라벨링)
-    labeling_pie_fig = go.Figure()  #그래프 객체 생성
-    labeling_pie_fig.add_trace(
-        go.Pie(
-            labels=pie_label_list[0],  #홍보성/진정성
-            values=pie_label_list[1], #라벨링별 예측값 비율
-            #차트 색상
-            marker=dict(
-                colors=['#fee500', "#fbef85"]
-            )
-        )
+    # real_rating_avg가 None일 수도 있으니 예외 처리
+    real_rating_avg_stars = rating_stars(real_rating_avg) if real_rating_avg else ''
+
+    return (kakaomap_id, road_address, all_rating_avg, real_rating_avg,
+            reviewer_name, review_text, reviewer_rating, review_date, img_url_list,
+            url, all_rating_avg_stars, real_rating_avg_stars) 
+
+#5. 상세페이지에서 음식점 간략 소개? html이랑 css 함수
+def make_store_html_and_css(store_name, url, road_address, all_rating_avg, all_rating_avg_stars, real_rating_avg, real_rating_avg_stars):
+    rating_html = f'<div><span id="rating_text"><b>전체 리뷰 평점 {all_rating_avg}</b></span><span>{all_rating_avg_stars}</span></div>'
+
+    #'진정성' 리뷰 평점이 있을 경우
+    if real_rating_avg:
+        rating_html += f'<div><span id="rating_text"><b>진정성 리뷰 평점 {real_rating_avg}</b></span><span>{real_rating_avg_stars}</span></div>'
+
+    href_url = "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"  #별 아이콘 fontawesome url
+
+    store_css = """
+        <style>
+            #map-link{
+                font-size: 25px;
+                color: #000;
+                font-weight:bold;
+                text-decoration: None;
+            }
+            #pointer{
+                color: #fee500;
+                margin-left: 10px;
+            }
+            .container{
+                margin-top:5px;
+                padding: 10px;
+                border: 1px solid black;
+                border-radius: 5px;
+            }
+            .stars{
+                color: #fee500;
+            }
+        </style>
+    """
+
+    store_html = f"""
+    <div class="header">
+        <link rel="stylesheet" href="{href_url}">
+        <a href="{url}" id="map-link">{store_name} 상세페이지</a>
+        <i class="fa-solid fa-arrow-pointer fa-2xl" id="pointer"></i>
+    </div>
+    <div class="container">
+        <div>{road_address}</div>
+        <div>{rating_html}</div>
+    </div>
+    """
+
+    return store_css, store_html
+
+#6. 상세페이지에서 리뷰 출력 html이랑 css 함수
+def make_review_html_and_css(name, stars, date, review):
+    review_html = (
+        f"<div class='review'>"
+        f"<span class='reviewer_name'><b>{name}</b></span>"
+        f"<span>{stars}</span>"
+        f"<span class='review_date'>{date}</span>"
+        f"<div>{review}</div>"
+        f"</div>"
     )
-    labeling_pie_fig.update_traces(
-        textposition='inside',  #차트 안에 범례 텍스트 생성
-        textinfo='percent+label'
-    )
-    labeling_pie_fig.update_layout(
-        title=dict(
-            text='<b>홍보성과 진정성 여부</b>',    #그래프 title
-            #그래프 위치
-            xanchor='center',
-            x=.5,
-            font=dict(size=20)  #폰트 사이즈
-        ),
-        #범례 위치
-        legend=dict(
-            orientation='h',
-            xanchor='center',
-            x=.5,
-            yanchor='bottom',
-            y=-.2
-        )
-    )
 
-    #막대그래프(음식점 리뷰 평점)
-    rating_bar_fig = go.Figure()   #그래프 객체 생성
-    rating_bar_fig.add_trace(
-        go.Bar(
-            x=bar_rating_list[0],
-            y=bar_rating_list[1],
-            marker_color="#402424",  #그래프 색상
-        )
-    )
-    rating_bar_fig.update_layout(
-        title=dict(
-            text='<b>진정성 리뷰 평점 분포도</b>', #그래프 타이틀
-            #그래프 위치
-            xanchor='center',
-            x=.5,
-            font=dict(size=20)  #폰트 사이즈
-        )
-    )
-    #x축 설정
-    rating_bar_fig.update_xaxes(
-        tickmode='array',
-        tickvals=[1, 2, 3, 4, 5],
-        ticktext=['1', '2', '3', '4', '5'],
-        range=[0.5, 5.5]
-    )
-    rating_bar_fig.update_yaxes(dtick=1)    #y축 눈금 간격 1로 설정
+    review_css = """
+    <style>
+        .review{margin-bottom: 10px;}
+        .reviewer_name{padding-right:10px;}
+        .review_date{display: inline-block; float: right}
+        .img_container{display: flex; justify-content: space-around; align-items: center;}
+        a:nth-child(1){margin-bottom: 10px;}
+    </style>
+    """
 
-    #워드클라우드
-    wordcloud = WordCloud(
-        font_path =r"C:\Users\QQQ\AppData\Local\Microsoft\Windows\Fonts\NanumGothic.ttf",
-        background_color='white',   #default: black
-        random_state=42 #단어 위치 고정
-    ).generate(wordcloud_text)
-    wordcloud_plot_fig = plt.figure()  #객체 생성
-    plt.imshow(wordcloud, interpolation='bilinear')
-    plt.rc('font', family='Malgun Gothic')  # 맑은 고딕
-    plt.rcParams['axes.unicode_minus'] = False  # 마이너스(-) 기호 깨짐 방지
-    plt.title('진정성 리뷰 워드클라우드', fontdict={'fontweight':'bold'}, fontsize=8) #그래프 제목, 볼드체
-    plt.axis('off')
-    plt.show()
+    return review_html, review_css
 
-    #상세페이지
-    restaurant_name = store_name
-    all_rating_avg = detail_rating_list[0]  #전체 리뷰 평점 평균
-    real_rating_avg = detail_rating_list[1] #진정성 리뷰 평점 평균
-    url = f'https://place.map.kakao.com/{kakaomap_id}'
+#상세페이지 리뷰에서 이미지 출력 함수
+def make_img_html(img_urls):
+    html = "<div class='img_container'>"
 
-    detail_all_list = [restaurant_name, all_rating_avg, real_rating_avg, url]
+    for url in img_urls[:2]:
+        html += f"<a href='{url}' target='_blank'><img src='{url}'></a>"
+    html += "</div>"
 
-    return labeling_pie_fig, rating_bar_fig, wordcloud_plot_fig, detail_all_list
+    return html
 
-# run python file code
+# run.py
+# import duckdb
 # import streamlit as st
 # from pathlib import Path
-# import duckdb
-# from test_kakaomap_module import get_kakaomap, plot_kakaomap, rating_stars
+# from test_module import (
+#     get_kakaomap,
+#     rating_stars,
+#     make_chart,
+#     unpack_detail_list,
+#     make_store_html_and_css,
+#     make_review_html_and_css,
+#     make_img_html
+# )
 
-# db_path = Path("G:\내 드라이브") / "reviews.db"
-# conn = duckdb.connect(db_path)
+# #db 연결
+# new_db_path = Path("G:\내 드라이브") / "reviews.db"
+# conn = duckdb.connect(database=new_db_path, read_only=False)
 
-# if conn:
-#     pre_label_list, bar_rating_list, wordcloud_text, kakapmap_id, store_name, detail_rating_list = get_kakaomap(conn)
-#     labeling_pie_fig, rating_hist_fig, wordcloud_plot_fig, detail_all_list = plot_kakaomap(pre_label_list, bar_rating_list, wordcloud_text, kakapmap_id, store_name, detail_rating_list)
+# pie_label_list, bar_rating_list, wordcloud_text, store_name, detail_list = get_kakaomap(conn)
+
+# #1. detail_list에서 변수 한 번에 분리
+# (
+#     kakaomap_id, road_address, all_rating_avg, real_rating_avg,
+#     reviewer_name, review_text, reviewer_rating, review_date, img_url_list,
+#     url, all_rating_avg_stars, real_rating_avg_stars
+# ) = unpack_detail_list(detail_list)
+
+# #2. 차트 객체 생성
+# pie_fig, bar_fig, wordcloud_fig = make_chart(pie_label_list, bar_rating_list, wordcloud_text)
+
+# #3. 상세페이지에서 음식점 간략 소개 함수
+# store_css, store_html = make_store_html_and_css(
+#     store_name, url, road_address, all_rating_avg, all_rating_avg_stars,
+#     real_rating_avg, real_rating_avg_stars
+# )
+
+# #4. Streamlit 출력
+# st.set_page_config(page_title=f'{store_name}', layout="wide")
+# st.header(f'{store_name} 카카오맵 리뷰')
+
+# chart_col, detail_col = st.columns([.5, .5])    #차트 컬럼/상세페이지 컬럼 분리
+
+# #4-1. 차트 컬럼
+# with chart_col:
+#     if bar_rating_list and wordcloud_text and real_rating_avg:  #'진정성' 리뷰가 있는 경우
+#         col1, col2 = st.columns(2)
+#         with col1:
+#             st.plotly_chart(pie_fig, use_container_width=True)
+#         with col2:
+#             st.plotly_chart(bar_fig, use_container_width=True)
+#         st.pyplot(wordcloud_fig)
+#     else:   #없는 경우
+#         st.plotly_chart(pie_fig, use_container_width=True)
+
+# #4-2. 상세페이지 컬럼
+# with detail_col:
+#     st.markdown(store_css, unsafe_allow_html=True)
+#     st.markdown(store_html, unsafe_allow_html=True)
     
-#     if labeling_pie_fig and rating_hist_fig and wordcloud_plot_fig:
-#         st.set_page_config(layout='wide')   #streamlit 화면 넓게
-#         store_name = detail_all_list[0]
-#         st.header(f'{store_name} 음식점 카카오맵 리뷰')
+#     if reviewer_name:
+#         stars = rating_stars(reviewer_rating[0])
+#         review_html, review_css = make_review_html_and_css(
+#             reviewer_name[0], stars, review_date[0], review_text[0]
+#         )
+#         st.markdown(review_css, unsafe_allow_html=True)
+#         st.markdown(review_html, unsafe_allow_html=True)
 
-#         #그래프(좌측), 상세(우측) 컬럼 생성
-#         plot_col, detail_col = st.columns([.7, .3])  #7:3 비율로 분할
-
-#         #그래프 컬럼의 subplots
-#         with plot_col:
-#             pie_col, hist_col = st.columns(2)
-
-#             #파이차트
-#             with pie_col:
-#                 st.plotly_chart(labeling_pie_fig, use_container_width=True)
-
-#             #히스토그램
-#             with hist_col:
-#                 st.plotly_chart(rating_hist_fig, use_container_width=True)
-
-#             #워드클라우드
-#             st.pyplot(wordcloud_plot_fig)
-
-#         #상세 컬럼
-#         with detail_col:
-#             all_rating_avg = detail_all_list[1]  #전체 리뷰 평점 평균
-#             real_rating_avg = detail_all_list[2] #진정성 리뷰 평점 평균
-
-#             css = """
-#             <style>
-#                 #map-link{
-#                     font-size: 25px;
-#                     color: #000;
-#                     font-weight:bold;
-#                     text-decoration: None;
-#                 }
-#                 #pointer{
-#                     color: #fee500;
-#                     margin-left: 10px;
-#                 }
-#                 .stars{
-#                     color: #fee500;
-#                 }
-#             </style>
-#             """
-#             st.markdown(css, unsafe_allow_html=True)
-#             url = detail_all_list[3]
-#             all_rating_avg_stars = rating_stars(all_rating_avg) #전체 리뷰 평점 평균의 별
-#             real_rating_avg_stars = rating_stars(real_rating_avg) #진정성 리뷰 평점 평균의 별
-
-#             html = f"""
-#                 <div class="header">
-#                     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-#                     <a href="{url}" id="map-link">{store_name} 상세페이지</a>
-#                     <i class="fa-solid fa-arrow-pointer fa-2xl" id="pointer"></i>
-#                 </div>
-#                 <div class="container">
-#                     <div class='all_stars_container'>
-#                         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-#                         <span id="rating_text">전체 평점 {all_rating_avg}</span>
-#                         <span>{all_rating_avg_stars}</div>
-#                     </div>
-#                     <div class='real_stars_container'>
-#                         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-#                         <span id="rating_text">진정성 리뷰 평점 {real_rating_avg}</span>
-#                         <span>{real_rating_avg_stars}</div>
-#                     </div>
-#                 </div>
-#             """
-#             st.markdown(html, unsafe_allow_html=True)    
-
-#     else:
-#         st.error('could not find graphs')
+#         if img_url_list[0]:
+#             st.markdown(make_img_html(img_url_list[0]), unsafe_allow_html=True)
+        
+#         if real_rating_avg:
+#             for i in range(1, len(reviewer_name)):
+#                 stars = rating_stars(reviewer_rating[i])
+#                 review_html, _ = make_review_html_and_css(
+#                     reviewer_name[i], stars, review_date[i], review_text[i]
+#                 )
+#                 st.markdown(review_html, unsafe_allow_html=True)
+#                 if img_url_list[i]:
+#                     st.markdown(make_img_html(img_url_list[i]), unsafe_allow_html=True)
 
 # conn.close()
