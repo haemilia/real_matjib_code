@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from transformers import AutoTokenizer, AutoProcessor
 import os
 from PIL import Image
-from navermap_utils import KcELECTRATextEncoder, CLIPImageEncoder, SimpleCrossAttention, clean_text
+from navermap_utils import KoELECTRATextEncoder, CLIPImageEncoder, SimpleCrossAttention, clean_text
 ##########################################################################################################################################
 # --- The TextPreprocessor Module ---
 class TextPreprocessor(torch.nn.Module):
@@ -39,7 +39,7 @@ class TextPreprocessor(torch.nn.Module):
         self.dropout = params.get("dropout", 0.1)
 
         # Initialize the core text feature extractor
-        self.text_encoder = KcELECTRATextEncoder(tokenizer_model_name).to(self.device)
+        self.text_encoder = KoELECTRATextEncoder(tokenizer_model_name).to(self.device)
         self.encoder_output_dim = self.text_encoder.embedding_dim # e.g., 768
 
         # Projection layers to bring all encoder outputs to fusion_embed_dim

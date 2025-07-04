@@ -252,7 +252,7 @@ def load_and_resize_image(image_path: str, target_size: tuple = (224, 224)) -> I
         print(f"Error loading or resizing image from {image_path}: {e}")
         return None
 
-class KcELECTRATextEncoder(torch.nn.Module):
+class KoELECTRATextEncoder(torch.nn.Module):
     def __init__(self, model_name="monologg/koelectra-small-discriminator"):
         super().__init__()
         self.model = AutoModel.from_pretrained(model_name)
