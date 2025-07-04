@@ -167,33 +167,33 @@ def plot_instagram(
 # from insta_plot import get_instagram, plot_instagram
 
 # DB위치 및 연결설정
-db_path = Path("G:\내 드라이브") / "reviews.db"     # 주의! 로컬 접속용 경로
-conn = duckdb.connect(db_path, read_only=True)
-call_store_name = "순대일번지"  # 테스트용(기본값) 가게 이름
+# db_path = Path("G:\내 드라이브") / "reviews.db"     # 주의! 로컬 접속용 경로
+# conn = duckdb.connect(db_path, read_only=True)
+# call_store_name = "순대일번지"  # 테스트용(기본값) 가게 이름
 
-if conn:
-    pie_label_list, reviewtxt_for_wordcloud, commentstxt_for_wordcloud = get_instagram(conn, call_store_name)
-    labeling_pie_fig, review_wordcloud_plot_fig, commments_wordcloud_plot_fig = plot_instagram(pie_label_list, reviewtxt_for_wordcloud, commentstxt_for_wordcloud)
+# if conn:
+#     pie_label_list, reviewtxt_for_wordcloud, commentstxt_for_wordcloud = get_instagram(conn, call_store_name)
+#     labeling_pie_fig, review_wordcloud_plot_fig, commments_wordcloud_plot_fig = plot_instagram(pie_label_list, reviewtxt_for_wordcloud, commentstxt_for_wordcloud)
         
-    if labeling_pie_fig and review_wordcloud_plot_fig and commments_wordcloud_plot_fig:
-        st.set_page_config(layout='wide')   #streamlit 화면 넓게
-        st.header(f'{call_store_name} 음식점 인스타그램 리뷰')
+#     if labeling_pie_fig and review_wordcloud_plot_fig and commments_wordcloud_plot_fig:
+#         st.set_page_config(layout='wide')   #streamlit 화면 넓게
+#         st.header(f'{call_store_name} 음식점 인스타그램 리뷰')
 
-        # 그래프(좌측), 워드클라우드(우측) 컬럼 생성
-        plot_col, w_cloud = st.columns([.3, .7])  #3:7 비율로 분할
+#         # 그래프(좌측), 워드클라우드(우측) 컬럼 생성
+#         plot_col, w_cloud = st.columns([.3, .7])  #3:7 비율로 분할
 
-        # 파이차트
-        with plot_col:
-            st.plotly_chart(labeling_pie_fig, use_container_width=True)
+#         # 파이차트
+#         with plot_col:
+#             st.plotly_chart(labeling_pie_fig, use_container_width=True)
         
-        # 리뷰 워드클라우드
-        with w_cloud:
-            st.pyplot(review_wordcloud_plot_fig)
+#         # 리뷰 워드클라우드
+#         with w_cloud:
+#             st.pyplot(review_wordcloud_plot_fig)
 
-        # 코멘트 워드클라우드(참조용)
-        # st.pyplot(commments_wordcloud_plot_fig)
+#         # 코멘트 워드클라우드(참조용)
+#         # st.pyplot(commments_wordcloud_plot_fig)
        
-    else:
-        st.error('could not find graphs')
+#     else:
+#         st.error('could not find graphs')
 
-conn.close()
+# conn.close()
