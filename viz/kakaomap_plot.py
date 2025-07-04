@@ -1,10 +1,10 @@
 import plotly.graph_objects as go
+import ast
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
-import ast
+from pathlib import Path
 import pandas as pd
 import re
-from pathlib import Path
 
 #1. duckdb 파일 연결, query문 함수
 def get_kakaomap(conn):
