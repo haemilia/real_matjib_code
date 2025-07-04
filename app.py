@@ -91,8 +91,8 @@ if 'selected_restaurant' not in st.session_state:
 if 'map_df' not in st.session_state:
     st.session_state.map_df = None
 # Get the cached DuckDB connection
-# con = get_r2_duckdb_connection()
-con = get_gdrive_duckdb_connection() # For development
+con = get_r2_duckdb_connection()
+# con = get_gdrive_duckdb_connection() # For development
 
 if con: # Only proceed if connection was successful
     if st.session_state.current_page == "main_map":

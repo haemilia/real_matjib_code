@@ -455,12 +455,12 @@ def blog_labelling_loop(conn:duckdb.DuckDBPyConnection,
 # Simple input UI loop:
 #   - When going into a new restaurant, say that we're doing so, and display the URL
 #   - Show information about the review (text, date, author username)
-def main(db_path=Path(__file__).parent.parent / "reviews_local.db",
+def main(db_path=Path(__file__).parent.parent / "reviews_label.db",
          restaurants_table_name= "restaurants",
          review_type:str= "map",
          labelled_column_name:str="is_advert",
          resample = False,
-         sample_size = 30):
+         sample_size = 50):
     
     if review_type in ["map", "navermap_reviews"]:
         table_name = "navermap_reviews"
