@@ -108,8 +108,6 @@ def get_kakaomap_data(click_store):
     #print(df_store)
     store_name = re.sub(r'\(.*?\)', '', store_name)  #괄호와 그 안의 내용 제거
 
-    ## -------------------------------------------------------------------------------------------------------------
-
     if not df_store.empty:
         
         #파이차트에 쓰일 변수
