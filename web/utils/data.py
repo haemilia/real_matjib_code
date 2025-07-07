@@ -141,7 +141,7 @@ def get_kakaomap_data(click_store):
                     all_words.extend(review)
                 elif isinstance(review, str):
                     review_json = review.replace("'", '"')
-                    word_list = json.loads(review_json)
+                    word_list = json.loads(review_json) #literal_eval() 대신 json.loads() 사용
                     all_words.extend(word_list)
 
             #하나의 텍스트로 합치기
