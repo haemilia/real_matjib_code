@@ -1,6 +1,6 @@
 import streamlit as st
 from web.viz.restaurants_map_plot import plot_restaurants_on_map
-from web.utils.data import get_map_data, get_kakaomap_data, get_instagram_data, get_naver_noun_data
+from web.utils.data import get_map_data, get_kakaomap_data, get_instagram_data, get_naver_noun_data, get_naver_detail_data
 from web.viz.kakaomap_plot_final import (
     rating_stars,
     make_chart,
@@ -11,6 +11,8 @@ from web.viz.kakaomap_plot_final import (
 )
 from web.viz.insta_plot import plot_instagram
 from web.viz.navermap_noungraph import visualize_restaurant_nlp_insights, create_text_placeholder_chart
+from web.viz.naver_detail import get_detail, get_detail_html_css
+
 def restaurant_detail_view():
     st.write(f"# {st.session_state.selected_restaurant}")
     st.markdown("---")
@@ -128,7 +130,28 @@ def restaurant_detail_view():
                     with st.container(border = True):
                         visualize_restaurant_nlp_insights(noun_summary_row)
             with detail_col:
-                st.write("상세 페이지 + 리뷰")
+                # with st.container(border=True):
+                df_store, click_store = get_naver_detail_data(click_store)
+                if df_store is None or df_store.empty:
+                    st.info("해당 음식점에 대한 네이버 리뷰 예시 정보가 없습니다.")
+                else:
+                    store_dict, review_dict = get_detail(df_store, click_store)
+                    store_name_structure, store_box_structure, review_structure = get_detail_html_css(store_dict, review_dict)
+
+                    store_name_html = store_name_structure.get('html')
+                    store_name_css = store_name_structure.get('css')
+                    store_box_html = store_box_structure.get('html')
+                    store_box_css = store_box_structure.get('css')
+                    review_html = review_structure.get('html')
+                    review_css = review_structure.get('css')
+
+                    st.markdown(store_name_html, unsafe_allow_html=True)
+                    st.markdown(store_name_css, unsafe_allow_html=True)
+                    st.markdown(store_box_css, unsafe_allow_html=True)
+                    st.markdown(store_box_html, unsafe_allow_html=True)
+                    
+                    st.markdown(review_html, unsafe_allow_html=True)
+                    st.markdown(review_css, unsafe_allow_html=True)
 
         with tab_insta:
             st.header("""인스타그램 (Instagram)""")
@@ -137,10 +160,10 @@ def restaurant_detail_view():
             if len(pie_label_list) == 0 or len(reviewtxt_for_wordcloud) == 0:
                 st.write("없음")
             else:
-                labeling_pie_fig, review_wordcloud_plot_fig, commments_wordcloud_plot_fig = plot_instagram(pie_label_list, 
-                                                                                                           reviewtxt_for_wordcloud, 
-                                                                                                           commentstxt_for_wordcloud)
-                if labeling_pie_fig and review_wordcloud_plot_fig and commments_wordcloud_plot_fig:
+                labeling_pie_fig, review_wordcloud_plot_fig, _ = plot_instagram(pie_label_list, 
+                                                                                reviewtxt_for_wordcloud, 
+                                                                                commentstxt_for_wordcloud)
+                if labeling_pie_fig and review_wordcloud_plot_fig:
                     st.header(f'{click_store} 음식점 인스타그램 리뷰')
 
                     # 그래프(좌측), 워드클라우드(우측) 컬럼 생성
