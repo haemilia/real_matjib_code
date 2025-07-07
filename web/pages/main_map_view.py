@@ -2,13 +2,10 @@ import streamlit as st
 from web.viz.restaurants_map_plot import plot_restaurants_on_map
 from web.utils.data import get_map_data
 def main_map_view():
-    print("Entered main_map_view")
     # --- Fetch and Plot Map Data ---
     st.subheader("연남동 일반 음식점")
     map_df = get_map_data() # Use the 'con' guaranteed to be live
-    print("Retrieved map_df")
     if not map_df.empty:
-        print("Success at retrieving map_df data")
         map_figure = plot_restaurants_on_map(map_df)
         if map_figure:
             event = st.plotly_chart(map_figure,
@@ -34,5 +31,4 @@ def main_map_view():
             st.warning("해당 마커에 대한 데이터를 찾을 수 없습니다.")
             st.write("Full selection event data (check your console):")
             st.json(event.selection.points[0]) # Display the first point's data in the app for inspection #type:ignore
-    # return map_df
     

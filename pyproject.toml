@@ -14,6 +14,7 @@ dependencies = [
     "ipykernel==6.29.5",
     "jupyter==1.1.1",
     "ko-core-news-md",
+    "konlpy>=0.6.0",
     "matplotlib>=3.10.3",
     "openpyxl==3.1.5",
     "pandas==2.3.0",

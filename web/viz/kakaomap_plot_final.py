@@ -4,115 +4,116 @@ import matplotlib.pyplot as plt
 import ast
 import pandas as pd
 import re
+from web.utils.database import download_font_for_wordcloud
 
 #1. duckdb 파일 연결, query문 함수
-def get_kakaomap(conn, click_store):
-    query = """
-        SELECT
-            r.store_name, r.road_address,
-            l.predicted_label, l.kakaomap_id, l.rating, l.reviewer_name, l.review_text, l.photo_url, l.processed_cleaned, l.realreview_prob, l.review_date
-        FROM
-            kakaomap_reviews_labelled l
-        JOIN
-            kakaomap_restaurants r
-        ON
-            l.kakaomap_id = r.kakaomap_id
-    """
-    df_kakaomap = conn.execute(query).df()
-    df_kakaomap['predicted_label'] = df_kakaomap['predicted_label'].map({0:'홍보성', 1:'진정성'})
-    df_kakaomap['review_date'] = pd.to_datetime(df_kakaomap['review_date']).dt.strftime('%Y-%m-%d')
+# def get_kakaomap(conn, click_store): # web.utils.data 로 옮김
+#     query = """y
+#         SELECT
+#             r.store_name, r.road_address,
+#             l.predicted_label, l.kakaomap_id, l.rating, l.reviewer_name, l.review_text, l.photo_url, l.processed_cleaned, l.realreview_prob, l.review_date
+#         FROM
+#             kakaomap_reviews_labelled l
+#         JOIN
+#             kakaomap_restaurants r
+#         ON
+#             l.kakaomap_id = r.kakaomap_id
+#     """
+#     df_kakaomap = conn.execute(query).df()
+#     df_kakaomap['predicted_label'] = df_kakaomap['predicted_label'].map({0:'홍보성', 1:'진정성'})
+#     df_kakaomap['review_date'] = pd.to_datetime(df_kakaomap['review_date']).dt.strftime('%Y-%m-%d')
     
-    #'스시정인'이라는 음식점으로 test
-    store_name = click_store
-    #print(df_kakaomap)
-    df_store = df_kakaomap.query("store_name == @store_name").reset_index()
-    #print(df_store)
-    store_name = re.sub(r'\(.*?\)', '', store_name)  #괄호와 그 안의 내용 제거
+#     #'스시정인'이라는 음식점으로 test
+#     store_name = click_store
+#     #print(df_kakaomap)
+#     df_store = df_kakaomap.query("store_name == @store_name").reset_index()
+#     #print(df_store)
+#     store_name = re.sub(r'\(.*?\)', '', store_name)  #괄호와 그 안의 내용 제거
 
-    ## -------------------------------------------------------------------------------------------------------------
+#     ## -------------------------------------------------------------------------------------------------------------
 
-    if not df_store.empty:
+#     if not df_store.empty:
         
-        #파이차트에 쓰일 변수
-        pre_label_name = list(df_store.predicted_label.unique()) #홍보성/진정성
-        pre_label_value = df_store['predicted_label'].value_counts() #라벨링값
-        pie_label_list = [pre_label_name, pre_label_value]
+#         #파이차트에 쓰일 변수
+#         pre_label_name = list(df_store.predicted_label.unique()) #홍보성/진정성
+#         pre_label_value = df_store['predicted_label'].value_counts() #라벨링값
+#         pie_label_list = [pre_label_name, pre_label_value]
 
-        #리뷰가 '진정성'이 있는 것들만 필터링
-        df_store_real = df_store.query("predicted_label == '진정성'")
+#         #리뷰가 '진정성'이 있는 것들만 필터링
+#         df_store_real = df_store.query("predicted_label == '진정성'")
 
-        if df_store_real.empty: #'진정성' 리뷰가 없을 떄
-            bar_rating_list = []    #막대그래프 변수
-            wordcloud_text = '' #워드클라우드 변수
-            real_rating = ''    #진정성 리뷰 평점 변수
+#         if df_store_real.empty: #'진정성' 리뷰가 없을 떄
+#             bar_rating_list = []    #막대그래프 변수
+#             wordcloud_text = '' #워드클라우드 변수
+#             real_rating = ''    #진정성 리뷰 평점 변수
         
-        else:
-            #막대그래프에 쓰일 변수
-            rating_xlabel = sorted(list(df_store_real.rating.unique()))  #x축 라벨
-            rating_ylabel = sorted(df_store_real.rating.value_counts())  #y축 값
-            bar_rating_list = [rating_xlabel, rating_ylabel]
+#         else:
+#             #막대그래프에 쓰일 변수
+#             rating_xlabel = sorted(list(df_store_real.rating.unique()))  #x축 라벨
+#             rating_ylabel = sorted(df_store_real.rating.value_counts())  #y축 값
+#             bar_rating_list = [rating_xlabel, rating_ylabel]
 
-            #워드클라우드
-            wordcloud_review = df_store_real.processed_cleaned
+#             #워드클라우드
+#             wordcloud_review = df_store_real.processed_cleaned
 
-            #모든 리뷰의 토큰을 하나의 리스트로 합침
-            all_words = []
-            for review in wordcloud_review:
-                if isinstance(review, str):
-                    word_list = ast.literal_eval(review)
-                    all_words.extend(word_list)
-                elif isinstance(review, list):
-                    all_words.extend(review)
+#             #모든 리뷰의 토큰을 하나의 리스트로 합침
+#             all_words = []
+#             for review in wordcloud_review:
+#                 if isinstance(review, str):
+#                     word_list = ast.literal_eval(review)
+#                     all_words.extend(word_list)
+#                 elif isinstance(review, list):
+#                     all_words.extend(review)
 
-            #하나의 텍스트로 합치기
-            wordcloud_text = ' '.join(all_words)
+#             #하나의 텍스트로 합치기
+#             wordcloud_text = ' '.join(all_words)
 
-            #상세페이지 칸에 쓰일 것
-            real_rating = round(df_store_real.rating.mean(), 1)  #진정성 리뷰의 평점
+#             #상세페이지 칸에 쓰일 것
+#             real_rating = round(df_store_real.rating.mean(), 1)  #진정성 리뷰의 평점
         
-        #상세페이지 칸에 쓰일 것들
-        kakaomap_id = df_store.kakaomap_id[0]   #카카오맵 id
-        road_address = df_store.road_address[0] #도로명 주소
-        all_rating = round(df_store.rating.mean(), 1)    #전체 리뷰의 평점
+#         #상세페이지 칸에 쓰일 것들
+#         kakaomap_id = df_store.kakaomap_id[0]   #카카오맵 id
+#         road_address = df_store.road_address[0] #도로명 주소
+#         all_rating = round(df_store.rating.mean(), 1)    #전체 리뷰의 평점
 
-        df_store_detail = df_store.iloc[:, 4:].sort_values(
-            by=['realreview_prob', 'photo_url', 'review_date'], #정렬 기준: '진정성 리뷰일 확률' ＞ '이미지 링크' ＞ '리뷰 작성일'
-            ascending=[False, False, False]
-        ).reset_index(drop=True).iloc[:2]
+#         df_store_detail = df_store.iloc[:, 4:].sort_values(
+#             by=['realreview_prob', 'photo_url', 'review_date'], #정렬 기준: '진정성 리뷰일 확률' ＞ '이미지 링크' ＞ '리뷰 작성일'
+#             ascending=[False, False, False]
+#         ).reset_index(drop=True).iloc[:2]
 
-        reviewer_name = reviewer_name = list(df_store_detail.reviewer_name) #리뷰어 네임
+#         reviewer_name = reviewer_name = list(df_store_detail.reviewer_name) #리뷰어 네임
 
-        #리뷰 내용
-        review_text = []
-        for review in df_store_detail.review_text:
-            if not review:  #리뷰 내용이 없을 경우
-                review_text.append('')
-            else:
-                review_text.append(review)
+#         #리뷰 내용
+#         review_text = []
+#         for review in df_store_detail.review_text:
+#             if not review:  #리뷰 내용이 없을 경우
+#                 review_text.append('')
+#             else:
+#                 review_text.append(review)
 
-        reviewer_rating = df_store_detail.rating #리뷰어 평점
-        review_date = df_store_detail.review_date   #리뷰 작성일
+#         reviewer_rating = df_store_detail.rating #리뷰어 평점
+#         review_date = df_store_detail.review_date   #리뷰 작성일
 
-        #리뷰 이미지 링크
-        photo_url = []
-        for url in df_store_detail.photo_url:
-            if url:
-                urls = url.split(',')   #쉼표로 url 분리
-                urls = ['https:' + url for url in urls] #각 url에 https: 붙이기
-                urls = urls[:2] #2개만 가져오기
-                photo_url.append(urls)
-            else:   #이미지 링크가 없을 경우
-                photo_url.append('')
+#         #리뷰 이미지 링크
+#         photo_url = []
+#         for url in df_store_detail.photo_url:
+#             if url:
+#                 urls = url.split(',')   #쉼표로 url 분리
+#                 urls = ['https:' + url for url in urls] #각 url에 https: 붙이기
+#                 urls = urls[:2] #2개만 가져오기
+#                 photo_url.append(urls)
+#             else:   #이미지 링크가 없을 경우
+#                 photo_url.append('')
 
-        detail_list = [kakaomap_id, road_address, all_rating, real_rating, reviewer_name, review_text, reviewer_rating, review_date, photo_url]
+#         detail_list = [kakaomap_id, road_address, all_rating, real_rating, reviewer_name, review_text, reviewer_rating, review_date, photo_url]
     
-    else:
-        pie_label_list = []
-        bar_rating_list = []
-        wordcloud_text = ''
-        detail_list = []
+#     else:
+#         pie_label_list = []
+#         bar_rating_list = []
+#         wordcloud_text = ''
+#         detail_list = []
 
-    return pie_label_list, bar_rating_list, wordcloud_text, store_name, detail_list
+#     return pie_label_list, bar_rating_list, wordcloud_text, store_name, detail_list
 
 #2. 차트 함수
 def make_chart(pie_label_list, bar_rating_list, wordcloud_text):
@@ -149,7 +150,8 @@ def make_chart(pie_label_list, bar_rating_list, wordcloud_text):
         )
 
         #폰트 path
-        font_path = r"C:\Users\QQQ\instagram\eunseo\viz\NanumGothic.ttf"
+        font_path = download_font_for_wordcloud(font_url = "https://pub-2781d44b6c7d49598d357b65966c4a68.r2.dev/NanumGothic.ttf", # 폰트 저장해둔 R2 공개 버킷
+                                                font_filename="NanumGothic.ttf")
         wordcloud = WordCloud(
             font_path=font_path,
             background_color='white',

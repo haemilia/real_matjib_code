@@ -3,6 +3,8 @@ import streamlit as st
 import duckdb
 from dotenv import load_dotenv
 import os
+import tempfile
+import requests
 
 @st.cache_resource(ttl="1h")
 def get_duckdb_connection():
@@ -72,4 +74,38 @@ def get_duckdb_connection():
             print("Program terminating...")
             st.stop()
     return None
-#%%
+
+@st.cache_resource
+def download_font_for_wordcloud(font_url: str, font_filename: str) -> str:
+    """
+    Downloads a font file from a URL to a temporary local path on the server.
+    This function is cached to avoid re-downloading the font on every rerun.
+    Logs progress to the terminal (stdout/stderr).
+
+    Args:
+        font_url (str): The public URL of the font file (e.g., from R2).
+        font_filename (str): The desired filename for the downloaded font (e.g., "NanumGothic.ttf").
+
+    Returns:
+        str: The local file path to the downloaded font, or None if download fails.
+    """
+    temp_dir = tempfile.gettempdir()
+    local_font_path = os.path.join(temp_dir, font_filename)
+
+    if os.path.exists(local_font_path):
+        print(f"INFO: Font already exists at: `{local_font_path}` (cached).")
+        return local_font_path
+
+    print(f"INFO: Downloading font from R2: `{font_url}` to `{local_font_path}`...")
+    try:
+        with requests.get(font_url, stream=True) as response:
+            response.raise_for_status() # Raise an HTTPError for bad responses (4xx or 5xx)
+
+            with open(local_font_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+        print("SUCCESS: Font downloaded successfully! ✅")
+        return local_font_path
+    except requests.exceptions.RequestException as e:
+        print(f"ERROR: Error downloading font from R2: {e} 😞. Please check the URL and R2 bucket access.")
+        return None
