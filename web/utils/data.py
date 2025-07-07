@@ -9,12 +9,12 @@ import ast
 from konlpy.tag import Okt
 
 @st.cache_data(ttl="1h")
-def _execute_cached_query_to_df(query:str) -> pd.DataFrame:
+def _execute_cached_query_to_df(query:str, params:list|None=None) -> pd.DataFrame:
     con = get_duckdb_connection()
     if con is None:
         raise ConnectionError("Failed to connect to duckdb")
     try:
-        df = con.execute(query).fetchdf()
+        df = con.execute(query, parameters=params).fetchdf()
         return df
     except Exception as e:
         print(f"Error while executing query: {query}; Error: {e}")
@@ -227,6 +227,7 @@ def get_instagram_data(call_store_name):
 
         else:
             st.warning("❗ 유사한 가게를 찾을 수 없습니다.")
+            return [], [], []
     
     # 단순 가게명 일치검색
     # df_test = df_instagram.query("store_name == call_store_name")
@@ -263,3 +264,26 @@ def get_instagram_data(call_store_name):
     commentstxt_for_wordcloud = " ".join(comments_tokens)
 
     return pie_label_list, reviewtxt_for_wordcloud, commentstxt_for_wordcloud
+
+def get_naver_noun_data(selected_store_name):
+    query_for_store_id = """SELECT naver_store_id
+                            FROM reviews.naver_restaurants
+                            WHERE store_name = (?)"""
+    store_id_df = _execute_cached_query_to_df(query_for_store_id, [selected_store_name])
+    if store_id_df.empty:
+        return None
+    selected_store_id = store_id_df.iloc[0, 0]
+
+    query_for_nouns = """SELECT 
+                            restaurant_name,
+                            total_reviews_processed,
+                            extracted_features,
+                            restaurant_id
+                        FROM
+                            reviews.naver_restaurant_nouns
+                        WHERE
+                            restaurant_id = (?)"""
+    noun_summary_row = _execute_cached_query_to_df(query_for_nouns, [selected_store_id])
+    if noun_summary_row.empty:
+        return None
+    return noun_summary_row
