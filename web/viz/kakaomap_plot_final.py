@@ -1,7 +1,7 @@
 import plotly.graph_objects as go
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
-import ast
+import json
 import pandas as pd
 import re
 
@@ -29,8 +29,6 @@ def get_kakaomap(conn, click_store):
     #print(df_store)
     store_name = re.sub(r'\(.*?\)', '', store_name)  #괄호와 그 안의 내용 제거
 
-    ## -------------------------------------------------------------------------------------------------------------
-
     if not df_store.empty:
         
         #파이차트에 쓰일 변수
@@ -55,14 +53,19 @@ def get_kakaomap(conn, click_store):
             #워드클라우드
             wordcloud_review = df_store_real.processed_cleaned
 
+## 0707 수정 --------------------------------------------------------------------------------------
+
             #모든 리뷰의 토큰을 하나의 리스트로 합침
             all_words = []
             for review in wordcloud_review:
-                if isinstance(review, str):
-                    word_list = ast.literal_eval(review)
-                    all_words.extend(word_list)
-                elif isinstance(review, list):
+                if isinstance(review, list):
                     all_words.extend(review)
+                elif isinstance(review, str):
+                    review_json = review.replace("'", '"')
+                    word_list = json.loads(review_json)
+                    all_words.extend(word_list)
+
+## -------- --------------------------------------------------------------------------------------
 
             #하나의 텍스트로 합치기
             wordcloud_text = ' '.join(all_words)

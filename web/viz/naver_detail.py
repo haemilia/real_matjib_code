@@ -1,8 +1,14 @@
 import pandas as pd
 import re
 import numpy as np
+import streamlit as st
+import duckdb
+from pathlib import Path
 
-def get_navermap(conn, click_store):    #db, 클릭한 스토어명
+new_db_path = Path("G:\내 드라이브") / "reviews.db"
+conn = duckdb.connect(database=new_db_path, read_only=False)
+
+def get_navermap(conn):    #db, 클릭한 스토어명
     query = """
         SELECT
             n.naver_jibun_address, n.naver_store_id,
@@ -19,7 +25,8 @@ def get_navermap(conn, click_store):    #db, 클릭한 스토어명
     df_navermap['sentiment'] = df_navermap['sentiment'].map({'positive':'긍정 리뷰', 'neutral':'중립 리뷰', 'negative':'부정 리뷰'})
     df_navermap['review_datetime'] = pd.to_datetime(df_navermap['review_datetime']).dt.strftime('%Y-%m-%d')
 
-    click_store = '하타네 연남점'
+    # click_store = '하타네 연남점'
+    click_store = '향미'
 
     df_store = df_navermap.query("store_naver_name == @click_store").sort_values(
         by=['is_advert_prob', 'review_datetime'], #홍보성 리뷰일 가능성, 작성일자
@@ -156,30 +163,30 @@ def get_detail_html_css(store_dict, review_dict):
 
 
 # streamlit design
-# df_store, click_store = get_navermap(conn, click_store)
-# store_dict, review_dict = get_detail(df_store, click_store)
-# store_name_structure, store_box_structure, review_structure = get_detail_html_css(store_dict, review_dict)
-# st.set_page_config(page_title=f'{click_store}', layout="wide")
+df_store, click_store = get_navermap(conn)
+store_dict, review_dict = get_detail(df_store, click_store)
+store_name_structure, store_box_structure, review_structure = get_detail_html_css(store_dict, review_dict)
+st.set_page_config(page_title=f'{click_store}', layout="wide")
 
-# plot_col, detail_col = st.columns([.7, .3])
+plot_col, detail_col = st.columns([.7, .3])
 
-# with detail_col:
-#     store_name_html = store_name_structure.get('html')
-#     store_name_css = store_name_structure.get('css')
-#     store_box_html = store_box_structure.get('html')
-#     store_box_css = store_box_structure.get('css')
-#     review_html = review_structure.get('html')
-#     review_css = review_structure.get('css')
+with detail_col:
+    store_name_html = store_name_structure.get('html')
+    store_name_css = store_name_structure.get('css')
+    store_box_html = store_box_structure.get('html')
+    store_box_css = store_box_structure.get('css')
+    review_html = review_structure.get('html')
+    review_css = review_structure.get('css')
 
-#     st.markdown(store_name_html, unsafe_allow_html=True)
-#     st.markdown(store_name_css, unsafe_allow_html=True)
-#     st.markdown(store_box_html, unsafe_allow_html=True)
-#     st.markdown(store_box_css, unsafe_allow_html=True)
+    st.markdown(store_name_html, unsafe_allow_html=True)
+    st.markdown(store_name_css, unsafe_allow_html=True)
+    st.markdown(store_box_html, unsafe_allow_html=True)
+    st.markdown(store_box_css, unsafe_allow_html=True)
     
-#     st.markdown(review_html, unsafe_allow_html=True)
-#     st.markdown(review_css, unsafe_allow_html=True)
+    st.markdown(review_html, unsafe_allow_html=True)
+    st.markdown(review_css, unsafe_allow_html=True)
 
-# conn.close()
+conn.close()
 
 # print('db 종료')
 
