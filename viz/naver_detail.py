@@ -19,7 +19,7 @@ def get_navermap(conn, click_store):    #db, 클릭한 스토어명
     df_navermap['sentiment'] = df_navermap['sentiment'].map({'positive':'긍정 리뷰', 'neutral':'중립 리뷰', 'negative':'부정 리뷰'})
     df_navermap['review_datetime'] = pd.to_datetime(df_navermap['review_datetime']).dt.strftime('%Y-%m-%d')
 
-    # click_store = '하타네 연남점'
+    click_store = '하타네 연남점'
 
     df_store = df_navermap.query("store_naver_name == @click_store").sort_values(
         by=['is_advert_prob', 'review_datetime'], #홍보성 리뷰일 가능성, 작성일자
@@ -80,12 +80,11 @@ def get_detail(dataframe, store_name):  #query한 데이터프레임, 음식점�
 
     return store_dict, review_dict
 
-
 def get_detail_html_css(store_dict, review_dict):
     href_url = "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
 
-    store_name = store_dict.get('name')
-    store_url = store_dict.get('url')
+    store_name = store_dict['name']
+    store_url = store_dict['url']
 
     store_name_css = f'<style> #store_name{{font-size: 25px; color: #000; font-weight: bold; text-decoration: None;}} #pointer{{color: #2DB400; margin-left:10px;}} </style>'
     store_name_html = f'<link rel="stylesheet" href="{href_url}"><a href="{store_url}" id=store_name>{store_name} 네이버 리뷰</a><i class="fa-solid fa-arrow-pointer fa-2xl" id="pointer"></i>'
@@ -95,9 +94,9 @@ def get_detail_html_css(store_dict, review_dict):
         'css': store_name_css
     }
 
-    store_location = store_dict.get('location')
-    store_sentiment_cnt = store_dict.get('sentiment_cnt')
-    store_review_cnt = store_dict.get('review_cnt')
+    store_location = store_dict['location']
+    store_sentiment_cnt = store_dict['sentiment_cnt']
+    store_review_cnt = store_dict['review_cnt']
 
     store_box_css = f'<style> #store_box{{margin-top:5px; padding:10px; border: 1px solid black; border-radius: 5px}} span{{margin-right: 10px;}} </style>'
     store_box_html = f"<div id=store_box><div>{store_location}</div>"
@@ -115,11 +114,11 @@ def get_detail_html_css(store_dict, review_dict):
     }
 
     reviewer_cnt = 0
-    review_sentiment = store_dict.get('sentiment')
-    review_datetime = review_dict.get('datetime')
-    review_visit_count = review_dict.get('visit_count')
-    review_text = review_dict.get('review')
-    review_img_url = review_dict.get('img_url')
+    review_sentiment = store_dict['sentiment']
+    review_datetime = review_dict['datetime']
+    review_visit_count = review_dict['visit_count']
+    review_text = review_dict['review']
+    review_img_url = review_dict['img_url']
 
     review_css = """
         <style>
@@ -155,11 +154,11 @@ def get_detail_html_css(store_dict, review_dict):
 
     return store_name_structure, store_box_structure, review_structure
 
-# streamlit design
-# df_store, click_store = get_navermap(conn. click_store)
-# store_name_structure, store_box_structure, review_structure = get_detail_html_css(store_dict, review_dict)
-# store_dict, review_dict = get_detail(df_store, click_store)
 
+# streamlit design
+# df_store, click_store = get_navermap(conn, click_store)
+# store_dict, review_dict = get_detail(df_store, click_store)
+# store_name_structure, store_box_structure, review_structure = get_detail_html_css(store_dict, review_dict)
 # st.set_page_config(page_title=f'{click_store}', layout="wide")
 
 # plot_col, detail_col = st.columns([.7, .3])
