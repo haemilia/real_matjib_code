@@ -9,12 +9,12 @@ import ast
 from konlpy.tag import Okt
 
 @st.cache_data(ttl="1h")
-def _execute_cached_query_to_df(query:str) -> pd.DataFrame:
+def _execute_cached_query_to_df(query:str, params:list|None=None) -> pd.DataFrame:
     con = get_duckdb_connection()
     if con is None:
         raise ConnectionError("Failed to connect to duckdb")
     try:
-        df = con.execute(query).fetchdf()
+        df = con.execute(query, parameters=params).fetchdf()
         return df
     except Exception as e:
         print(f"Error while executing query: {query}; Error: {e}")
@@ -205,7 +205,7 @@ def get_instagram_data(call_store_name):
     
     query = """
         SELECT
-            store_name, search_name, label, review, tags, comments
+            store_name, search_name, label, review, tags, comments, review_tokens, comments_tokens
         FROM
             reviews.instagram_restaurants
     """
@@ -216,7 +216,7 @@ def get_instagram_data(call_store_name):
     matched_store = None
     df_test = pd.DataFrame()
 
-    if call_store_name:
+    if not df_instagram.empty:
         store_list = df_instagram['search_name'].dropna().unique().tolist()
         closest_matches = get_close_matches(call_store_name, store_list, n=1, cutoff=0.3)
 
@@ -227,6 +227,7 @@ def get_instagram_data(call_store_name):
 
         else:
             st.warning("❗ 유사한 가게를 찾을 수 없습니다.")
+            return [], [], []
     
     # 단순 가게명 일치검색
     # df_test = df_instagram.query("store_name == call_store_name")
@@ -236,30 +237,66 @@ def get_instagram_data(call_store_name):
     pre_label_value = df_test['label'].value_counts() #라벨링값
     pie_label_list = [pre_label_name, pre_label_value]
 
-    # 리뷰 중 '진정성'이 있는 것들만 필터링 (이 코드에서 사용 안함)
-    # df_test_real = df_test.query("label == '진정성'")        
+    # 리뷰 중 '진정성'이 있는 것들만 필터링
+    df_test_real = df_test.query("label == '진정성'")
+    
+    ## '진정성' 리뷰의 토큰 통합(워드클라우드용)
+    all_review_tokens = [token for sublist in df_test_real['review_tokens'].dropna() for token in sublist]
+    reviewtxt_for_wordcloud = " ".join(all_review_tokens)
 
-    ## 리뷰 및 코멘트 토큰화(워드클라우드용)
-    okt = Okt()
-    stopwords = [
-        '은', '는', '이', '가', '을', '를', '과', '와', '도', '만', '으로', '로', '적', '인', '이다', '이고', '이며', '이니',
-        '수', '개', '분', '등', '고', '게', '듯', '음', '안', '것', '때', '곳', '분들', '요', '에서', '하다', '되다',
-        '데', '그냥', '네', '응', '오', '아', '그', '저', '저런', '그것', '저것', '무엇', '뭐', '때문', '일단', '나', '한',
-        '에', '의', '엔', '내', '거', '건', '랑', '푹', '님', '난', '들', '특히', '탱', '이네', '이랑', '곧', '금방', '이에요',
-        '드리다', '나다', '나고', '나니', '니', '상', '떨기', '아예', '재', '편', '인데', '스레', '들다', '벌써', '보단',
-        '급', '나면', '셈', '씩', '쯤', '함', '딱', '정말', '로서'
-    ]    # 불용어 지정
-
-    # 리뷰 텍스트 토큰화
-    joined_review_text = " ".join(df_test['review'].dropna().astype(str))
-    review_tokens = [word for word in okt.morphs(joined_review_text) if word not in stopwords and len(word) > 1]
-    # review_tokens = [word for word in okt.nouns(joined_review_text) if word not in stopwords and len(word) > 1]
-    reviewtxt_for_wordcloud = " ".join(review_tokens)
-
-    # 코멘트 텍스트 토큰화
-    joined_comments_text = " ".join(df_test['comments'].dropna().astype(str))
-    comments_tokens = [word for word in okt.morphs(joined_comments_text) if word not in stopwords and len(word) > 1]
-    # comments_tokens = [word for word in okt.nouns(joined_comments_text) if word not in stopwords and len(word) > 1]
-    commentstxt_for_wordcloud = " ".join(comments_tokens)
-
+    # '진정성' 코멘트의 토큰 통합(워드클라우드용, 참조용)
+    all_comments_token = [token for sublist in df_test_real['comments_tokens'].dropna() for token in sublist]
+    commentstxt_for_wordcloud = " ".join(all_comments_token)          
+    
     return pie_label_list, reviewtxt_for_wordcloud, commentstxt_for_wordcloud
+
+def get_naver_noun_data(selected_store_name):
+    query_for_store_id = """SELECT naver_store_id
+                            FROM reviews.naver_restaurants
+                            WHERE store_name = (?)"""
+    store_id_df = _execute_cached_query_to_df(query_for_store_id, [selected_store_name])
+    if store_id_df.empty:
+        return None
+    selected_store_id = store_id_df.iloc[0, 0]
+
+    query_for_nouns = """SELECT 
+                            restaurant_name,
+                            total_reviews_processed,
+                            extracted_features,
+                            restaurant_id
+                        FROM
+                            reviews.naver_restaurant_nouns
+                        WHERE
+                            restaurant_id = (?)"""
+    noun_summary_row = _execute_cached_query_to_df(query_for_nouns, [selected_store_id])
+    if noun_summary_row.empty:
+        return None
+    return noun_summary_row
+
+def get_naver_detail_data(click_store):
+    query = """
+        SELECT
+            n.naver_jibun_address, n.naver_store_id,
+            m.store_id, m.store_naver_name, m.review_text, m.review_datetime, m.visit_count, m.image_links, m.review_datetime, m.is_advert_prob, m.sentiment, m.confidence,
+        FROM
+            reviews.navermap_reviews m
+        JOIN
+            reviews.naver_restaurants n
+        ON
+            n.naver_store_id = m.store_id
+    """
+    df_navermap = _execute_cached_query_to_df(query)
+
+    df_navermap['sentiment'] = df_navermap['sentiment'].map({'positive':'긍정 리뷰', 'neutral':'중립 리뷰', 'negative':'부정 리뷰'})
+    df_navermap['review_datetime'] = pd.to_datetime(df_navermap['review_datetime']).dt.strftime('%Y-%m-%d')
+
+
+    df_store = df_navermap.query("store_naver_name == @click_store").sort_values(
+        by=['is_advert_prob', 'review_datetime'], #홍보성 리뷰일 가능성, 작성일자
+        ascending=[True, False] #내림차순(진정성일 확률이 높은 리뷰부터), 오름차순(최신순)
+    ).reset_index()
+
+    if df_store.empty:
+        return None, click_store
+
+    return df_store, click_store

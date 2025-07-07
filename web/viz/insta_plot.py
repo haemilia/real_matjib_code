@@ -131,29 +131,25 @@ def plot_instagram(
     ).generate(reviewtxt_for_wordcloud)
     review_wordcloud_plot_fig = plt.figure()  #객체 생성
     plt.imshow(review_wordcloud, interpolation='bilinear')
-    # 그래프에서 한글, 유니코드 '-' 깨짐방지'
+    plt.axis('off')
+    plt.show()
+
+    # comments_wordcloud = WordCloud(
+    #     font_path=path_to_font,   # 로컬 테스트용 폰트 경로
+    #     background_color='white',   #default: black
+    #     colormap='Greys',  # 그레이스케일 컬러맵
+    #     # random_state=42 #단어 위치 고정
+    # ).generate(commentstxt_for_wordcloud)
+    # commments_wordcloud_plot_fig = plt.figure()  #객체 생성
+    # plt.imshow(comments_wordcloud, interpolation='bilinear')
+    # # 그래프에서 한글, 유니코드 '-' 깨짐방지'
     # plt.rcParams['font.family'] = 'Malgun Gothic'
-    # plt.rcParams['axes.unicode_minus'] = False    
-    # plt.title('진정성 리뷰 워드클라우드', fontdict={'fontweight':'bold'}, fontsize=8) #그래프 제목, 볼드체
-    plt.axis('off')
-    plt.show()
+    # plt.rcParams['axes.unicode_minus'] = False
+    # plt.title('진정성 코멘트 워드클라우드', fontdict={'fontweight':'bold'}, fontsize=8) #그래프 제목, 볼드체
+    # plt.axis('off')
+    # plt.show()
 
-    comments_wordcloud = WordCloud(
-        font_path=path_to_font,   # 로컬 테스트용 폰트 경로
-        background_color='white',   #default: black
-        colormap='Greys',  # 그레이스케일 컬러맵
-        # random_state=42 #단어 위치 고정
-    ).generate(commentstxt_for_wordcloud)
-    commments_wordcloud_plot_fig = plt.figure()  #객체 생성
-    plt.imshow(comments_wordcloud, interpolation='bilinear')
-    # 그래프에서 한글, 유니코드 '-' 깨짐방지'
-    plt.rcParams['font.family'] = 'Malgun Gothic'
-    plt.rcParams['axes.unicode_minus'] = False
-    plt.title('진정성 코멘트 워드클라우드', fontdict={'fontweight':'bold'}, fontsize=8) #그래프 제목, 볼드체
-    plt.axis('off')
-    plt.show()
-
-    return labeling_pie_fig, review_wordcloud_plot_fig, commments_wordcloud_plot_fig  
+    return labeling_pie_fig, review_wordcloud_plot_fig, None  
 
 
 ### code for run python file (filename: )
