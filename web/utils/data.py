@@ -4,7 +4,7 @@ from typing import Tuple, Any
 from pyproj import CRS, Transformer
 from web.utils.database import get_duckdb_connection
 import re
-import ast
+import json
 
 @st.cache_data(ttl="1h")
 def _execute_cached_query_to_df(query:str) -> pd.DataFrame:
@@ -108,8 +108,6 @@ def get_kakaomap_data(click_store):
     #print(df_store)
     store_name = re.sub(r'\(.*?\)', '', store_name)  #괄호와 그 안의 내용 제거
 
-    ## -------------------------------------------------------------------------------------------------------------
-
     if not df_store.empty:
         
         #파이차트에 쓰일 변수
@@ -137,11 +135,12 @@ def get_kakaomap_data(click_store):
             #모든 리뷰의 토큰을 하나의 리스트로 합침
             all_words = []
             for review in wordcloud_review:
-                if isinstance(review, str):
-                    word_list = ast.literal_eval(review)
-                    all_words.extend(word_list)
-                elif isinstance(review, list):
+                if isinstance(review, list):
                     all_words.extend(review)
+                elif isinstance(review, str):
+                    review_json = review.replace("'", '"')
+                    word_list = json.loads(review_json)
+                    all_words.extend(word_list)
 
             #하나의 텍스트로 합치기
             wordcloud_text = ' '.join(all_words)
