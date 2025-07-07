@@ -96,7 +96,7 @@ def get_detail_html_css(store_dict, review_dict):
 
     review_css = """
         <style>
-            .container{margin: 5px 0 30px;}
+            .review_container{margin: 5px 0 30px;}
             .more_box{display: flex; justify-content: space-between;}
             #visit_count{padding: 0 10px;}
             #img_box{margin-top:5px}
@@ -107,7 +107,7 @@ def get_detail_html_css(store_dict, review_dict):
     n = len(review_text)
     for i in range(n):
         review_html += (
-            f"<div class='container'><div class=more_box><div class=left_box><b>리뷰어 {reviewer_cnt + 1}</b></div>"
+            f"<div class='review_container'><div class=more_box><div class=left_box><b>리뷰어 {reviewer_cnt + 1}</b></div>"
         )
         reviewer_cnt += 1
 
