@@ -1,6 +1,6 @@
 import streamlit as st
 from web.viz.restaurants_map_plot import plot_restaurants_on_map
-from web.utils.data import get_map_data, get_kakaomap_data
+from web.utils.data import get_map_data, get_kakaomap_data, get_instagram_data
 from web.viz.kakaomap_plot_final import (
     rating_stars,
     make_chart,
@@ -9,6 +9,7 @@ from web.viz.kakaomap_plot_final import (
     make_review_html_and_css,
     make_img_html
 )
+from web.viz.insta_plot import plot_instagram
 def restaurant_detail_view():
     st.write(f"# {st.session_state.selected_restaurant}")
     st.markdown("---")
@@ -42,9 +43,10 @@ def restaurant_detail_view():
             ### ---------------------------------------------------------------------------------------------
             click_store = st.session_state.selected_restaurant
             pie_label_list, bar_rating_list, wordcloud_text, store_name, detail_list = get_kakaomap_data(click_store)
+            print("bar_rating_list:", bar_rating_list)
 
-            # 모든 값이 비어있거나 없는 경우 '없음' 출력
-            if not pie_label_list and not bar_rating_list and not wordcloud_text and not store_name and not detail_list:
+            # 값이 비어있거나 없는 경우 '없음' 출력
+            if len(pie_label_list) == 0 or len(bar_rating_list) == 0 or len(wordcloud_text) == 0:
                 st.write('없음')
 
             else:
@@ -110,7 +112,34 @@ def restaurant_detail_view():
             st.write("어쩌구 저쩌구")
         with tab_insta:
             st.header("""인스타그램 (Instagram)""")
-            st.write("어쩌구 저쩌구")
+            click_store = st.session_state.selected_restaurant
+            pie_label_list, reviewtxt_for_wordcloud, commentstxt_for_wordcloud = get_instagram_data(click_store)
+            if len(pie_label_list) == 0:
+                st.write("없음")
+            else:
+                labeling_pie_fig, review_wordcloud_plot_fig, commments_wordcloud_plot_fig = plot_instagram(pie_label_list, 
+                                                                                                           reviewtxt_for_wordcloud, 
+                                                                                                           commentstxt_for_wordcloud)
+                if labeling_pie_fig and review_wordcloud_plot_fig and commments_wordcloud_plot_fig:
+                    st.set_page_config(layout='wide')   #streamlit 화면 넓게
+                    st.header(f'{click_store} 음식점 인스타그램 리뷰')
+
+                    # 그래프(좌측), 워드클라우드(우측) 컬럼 생성
+                    plot_col, w_cloud = st.columns([.3, .7])  #3:7 비율로 분할
+
+                    # 파이차트
+                    with plot_col:
+                        st.plotly_chart(labeling_pie_fig, use_container_width=True)
+                    
+                    # 리뷰 워드클라우드
+                    with w_cloud:
+                        st.subheader("리뷰 워드클라우드")
+                        st.pyplot(review_wordcloud_plot_fig)
+                
+                else:
+                    st.error('could not find graphs')
+
+
     st.markdown("---")
     if st.button("⬅️ 지도로 다시 돌아가기", key="back_to_main_map_button_bottom"):
         st.session_state.current_page = "main_map" #메인 지도 페이지로 다시 돌아가기
