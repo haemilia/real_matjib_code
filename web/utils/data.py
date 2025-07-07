@@ -2,17 +2,20 @@ import streamlit as st
 import pandas as pd
 from typing import Tuple, Any
 from pyproj import CRS, Transformer
+from difflib import get_close_matches
 from web.utils.database import get_duckdb_connection
 import re
+import ast
+from konlpy.tag import Okt
 import json
 
 @st.cache_data(ttl="1h")
-def _execute_cached_query_to_df(query:str) -> pd.DataFrame:
+def _execute_cached_query_to_df(query:str, params:list|None=None) -> pd.DataFrame:
     con = get_duckdb_connection()
     if con is None:
         raise ConnectionError("Failed to connect to duckdb")
     try:
-        df = con.execute(query).fetchdf()
+        df = con.execute(query, parameters=params).fetchdf()
         return df
     except Exception as e:
         print(f"Error while executing query: {query}; Error: {e}")
@@ -51,7 +54,7 @@ def convert_epsg5174_to_wgs84(x:pd.Series, y:pd.Series) -> Tuple[Any, Any]:
     except Exception as e:
         print(f"An error occurred during the transformation: {e}")
         return None, None
-    
+#### DATA RETRIEVAL FUNCTIONS ###############################################################################  
 def get_map_data() -> pd.DataFrame:
     """
     Queries X_EPSG_5174(longitude), Y_EPSG_5174(latitude), store_name from table `restaurants`.
@@ -91,9 +94,9 @@ def get_kakaomap_data(click_store):
             r.store_name, r.road_address,
             l.predicted_label, l.kakaomap_id, l.rating, l.reviewer_name, l.review_text, l.photo_url, l.processed_cleaned, l.realreview_prob, l.review_date
         FROM
-            kakaomap_reviews_labelled l
+            reviews.kakaomap_reviews_labelled l
         JOIN
-            kakaomap_restaurants r
+            reviews.kakaomap_restaurants r
         ON
             l.kakaomap_id = r.kakaomap_id
     """
@@ -101,11 +104,10 @@ def get_kakaomap_data(click_store):
     df_kakaomap['predicted_label'] = df_kakaomap['predicted_label'].map({0:'홍보성', 1:'진정성'})
     df_kakaomap['review_date'] = pd.to_datetime(df_kakaomap['review_date']).dt.strftime('%Y-%m-%d')
     
-    #'스시정인'이라는 음식점으로 test
     store_name = click_store
     #print(df_kakaomap)
     df_store = df_kakaomap.query("store_name == @store_name").reset_index()
-    #print(df_store)
+    # print(df_store)
     store_name = re.sub(r'\(.*?\)', '', store_name)  #괄호와 그 안의 내용 제거
 
     if not df_store.empty:
@@ -191,3 +193,110 @@ def get_kakaomap_data(click_store):
         detail_list = []
 
     return pie_label_list, bar_rating_list, wordcloud_text, store_name, detail_list
+
+def get_instagram_data(call_store_name):
+    """
+        instagram_restaurants 테이블 컬럼목록 :
+            store_name, search_name, model_input_review, label, reviewer_id, review, tags, comments, review_date        
+        conn : DB연결
+        call_store_name : 호출할 가게 이름
+        return : 파이차트용 변수, 워드클라우드용 텍스트 모음(리뷰, 코멘트)
+    """
+    
+    query = """
+        SELECT
+            store_name, search_name, label, review, tags, comments, review_tokens, comments_tokens
+        FROM
+            reviews.instagram_restaurants
+    """
+    df_instagram = _execute_cached_query_to_df(query)
+
+    # call_store_name = "순대일번지"    # 테스트용 가게 이름
+    # 가장 유사한 가게명 검색 (호출명과 정확히 일치하지 않을 경우 고려)
+    matched_store = None
+    df_test = pd.DataFrame()
+
+    if not df_instagram.empty:
+        store_list = df_instagram['search_name'].dropna().unique().tolist()
+        closest_matches = get_close_matches(call_store_name, store_list, n=1, cutoff=0.3)
+
+        if closest_matches:
+            matched_store = closest_matches[0]
+            df_test = df_instagram[df_instagram['search_name'] == matched_store]
+            df_test['label'] = df_test['label'].replace('일반', '진정성')
+
+        else:
+            st.warning("❗ 유사한 가게를 찾을 수 없습니다.")
+            return [], [], []
+    
+    # 단순 가게명 일치검색
+    # df_test = df_instagram.query("store_name == call_store_name")
+
+    #파이차트에 쓰일 변수
+    pre_label_name = list(df_test.label.unique()) #홍보/진정성
+    pre_label_value = df_test['label'].value_counts() #라벨링값
+    pie_label_list = [pre_label_name, pre_label_value]
+
+    # 리뷰 중 '진정성'이 있는 것들만 필터링
+    df_test_real = df_test.query("label == '진정성'")
+    
+    ## '진정성' 리뷰의 토큰 통합(워드클라우드용)
+    all_review_tokens = [token for sublist in df_test_real['review_tokens'].dropna() for token in sublist]
+    reviewtxt_for_wordcloud = " ".join(all_review_tokens)
+
+    # '진정성' 코멘트의 토큰 통합(워드클라우드용, 참조용)
+    all_comments_token = [token for sublist in df_test_real['comments_tokens'].dropna() for token in sublist]
+    commentstxt_for_wordcloud = " ".join(all_comments_token)          
+    
+    return pie_label_list, reviewtxt_for_wordcloud, commentstxt_for_wordcloud
+
+def get_naver_noun_data(selected_store_name):
+    query_for_store_id = """SELECT naver_store_id
+                            FROM reviews.naver_restaurants
+                            WHERE store_name = (?)"""
+    store_id_df = _execute_cached_query_to_df(query_for_store_id, [selected_store_name])
+    if store_id_df.empty:
+        return None
+    selected_store_id = store_id_df.iloc[0, 0]
+
+    query_for_nouns = """SELECT 
+                            restaurant_name,
+                            total_reviews_processed,
+                            extracted_features,
+                            restaurant_id
+                        FROM
+                            reviews.naver_restaurant_nouns
+                        WHERE
+                            restaurant_id = (?)"""
+    noun_summary_row = _execute_cached_query_to_df(query_for_nouns, [selected_store_id])
+    if noun_summary_row.empty:
+        return None
+    return noun_summary_row
+
+def get_naver_detail_data(click_store):
+    query = """
+        SELECT
+            n.naver_jibun_address, n.naver_store_id,
+            m.store_id, m.store_naver_name, m.review_text, m.review_datetime, m.visit_count, m.image_links, m.review_datetime, m.is_advert_prob, m.sentiment, m.confidence,
+        FROM
+            reviews.navermap_reviews m
+        JOIN
+            reviews.naver_restaurants n
+        ON
+            n.naver_store_id = m.store_id
+    """
+    df_navermap = _execute_cached_query_to_df(query)
+
+    df_navermap['sentiment'] = df_navermap['sentiment'].map({'positive':'긍정 리뷰', 'neutral':'중립 리뷰', 'negative':'부정 리뷰'})
+    df_navermap['review_datetime'] = pd.to_datetime(df_navermap['review_datetime']).dt.strftime('%Y-%m-%d')
+
+
+    df_store = df_navermap.query("store_naver_name == @click_store").sort_values(
+        by=['is_advert_prob', 'review_datetime'], #홍보성 리뷰일 가능성, 작성일자
+        ascending=[True, False] #내림차순(진정성일 확률이 높은 리뷰부터), 오름차순(최신순)
+    ).reset_index()
+
+    if df_store.empty:
+        return None, click_store
+
+    return df_store, click_store
