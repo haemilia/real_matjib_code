@@ -13,6 +13,7 @@ dependencies = [
     "google-genai>=1.24.0",
     "ipykernel==6.29.5",
     "jupyter==1.1.1",
+    "ko-core-news-md",
     "matplotlib>=3.10.3",
     "openpyxl==3.1.5",
     "pandas==2.3.0",
@@ -26,6 +27,7 @@ dependencies = [
     "scikit-learn==1.7.0",
     "selenium==4.33.0",
     "soynlp==0.0.493",
+    "spacy>=3.8.7",
     "streamlit==1.46.0",
     "torch==2.7.1",
     "torchvision==0.22.1",
@@ -45,3 +47,6 @@ dev = [
     "types-requests==2.32.4.20250611",
     "types-tqdm==4.67.0.20250516",
 ]
+
+[tool.uv.sources]
+ko-core-news-md = { url = "https://github.com/explosion/spacy-models/releases/download/ko_core_news_md-3.8.0/ko_core_news_md-3.8.0-py3-none-any.whl" }
