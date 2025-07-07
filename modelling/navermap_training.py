@@ -688,7 +688,6 @@ def main(test_df, path_to_configs=DATADIR / "navermap_configs"):
 
             train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, collate_fn=custom_collate_fn, num_workers=0)
             val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, collate_fn=custom_collate_fn, num_workers=0)
-
             # Device setup
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             print(f"\nUsing device: {device}")
@@ -915,7 +914,6 @@ def hyperparameter_optimization():
         train_val_df, test_size=(0.2 / 0.8), stratify=train_val_df['is_advert'], random_state=42 # 20% of train_val_df for validation
     )
     print(f"HPO Data Split: Training ({len(train_df_for_sweeps)} samples), Validation ({len(val_df_for_sweeps)} samples)")
-
     # --- Define the Sweep Configuration ---
     sweep_config = {
         "name": "navermap-review-hpo-exp3-local",

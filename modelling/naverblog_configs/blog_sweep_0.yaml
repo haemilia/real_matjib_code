@@ -1,0 +1,67 @@
+program: naverblog_training.py 
+method: bayes   
+metric:
+  name: val_F1 
+  goal: maximize
+parameters:
+  # General Training Parameters (often fixed or broad range)
+  learning_rate:
+    distribution: log_uniform_values
+    min: 0.00001
+    max: 0.001
+  epochs:
+    value: 10 # Start with a reasonable number, can be increased if models converge too quickly
+  batch_size:
+    value: 32 # Keep batch size moderate for speed and memory efficiency
+  params:
+    parameters:
+      fusion_embedding_dim:
+        values: [32, 64, 96, 128] 
+
+      # Text Model Configuration
+      text_model_name:
+        value: monologg/koelectra-small-discriminator
+
+      # Text Fusion Strategy (from TextEmbedder)
+      text_fusion_strategy:
+        values: ["concat", "mean", "max"] 
+      # Text params
+      post_text_max_len:
+        value: 512
+      post_text_chunk_overlap:
+        values: [0, 25, 50]
+      aux_text_max_len:
+        value: 64
+
+      # Image Model Configuration
+      image_model_name:
+        value: "openai/clip-vit-base-patch32" 
+
+      # Image Fusion Strategy (from ImageEmbedder)
+      image_fusion_strategy:
+        values: ["mean_all", "max_all", "mean_by_column_concat", "max_by_column_concat"]
+
+      # Main Multimodal Fusion Strategy (from NaverBlogModel)
+      fusion_strategy:
+        values: ["concat_proj", "mean_pool", "max_pool"]
+
+      # Classifier Head Parameters 
+      classifier_hidden_dim:
+        values: [32, 64, 128] 
+      classifier_dropout:
+        distribution: uniform
+        min: 0.1
+        max: 0.3 
+
+  # Optimizer 
+  optimizer_type:
+    value: "AdamW" 
+
+  # Loss function (fixed for binary classification with logits)
+  loss_fn_type:
+    value: "BCEWithLogitsLoss" # This should ideally be fixed in your training loop
+
+  # Early stopping configuration
+  early_stopping:
+    patience: 3
+    min_delta: 0.001
