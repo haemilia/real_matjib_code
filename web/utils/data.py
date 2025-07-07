@@ -93,9 +93,9 @@ def get_kakaomap_data(click_store):
             r.store_name, r.road_address,
             l.predicted_label, l.kakaomap_id, l.rating, l.reviewer_name, l.review_text, l.photo_url, l.processed_cleaned, l.realreview_prob, l.review_date
         FROM
-            kakaomap_reviews_labelled l
+            reviews.kakaomap_reviews_labelled l
         JOIN
-            kakaomap_restaurants r
+            reviews.kakaomap_restaurants r
         ON
             l.kakaomap_id = r.kakaomap_id
     """
@@ -207,7 +207,7 @@ def get_instagram_data(call_store_name):
         SELECT
             store_name, search_name, label, review, tags, comments
         FROM
-            instagram_restaurants
+            reviews.instagram_restaurants
     """
     df_instagram = _execute_cached_query_to_df(query)
 
