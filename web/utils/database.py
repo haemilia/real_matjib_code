@@ -61,11 +61,9 @@ def get_duckdb_connection():
                     st.info("Please ensure your R2 bucket name, account ID, access keys are correct and the file exists at the specified path in Cloudflare R2 secrets.")
                     st.stop() # Stop the app execution if all retries fail
     elif db_type == "LOCAL":
-        print("Attempt local db connection")
-        db_path = os.getenv("DB_PATH", "H:/My Drive/reviews.db")
-        print(f"Got db path: {db_path}")
+        raw_db_path = os.getenv("DB_PATH", "H:/My Drive/reviews.db")
+        db_path = os.path.normpath(os.path.abspath(raw_db_path))
         try:
-            print("Trying local db connection")
             con = duckdb.connect(db_path, read_only=True)
             return con
         except Exception as e:
@@ -74,4 +72,4 @@ def get_duckdb_connection():
             print("Program terminating...")
             st.stop()
     return None
-
+#%%
