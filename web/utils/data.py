@@ -6,7 +6,7 @@ from difflib import get_close_matches
 from web.utils.database import get_duckdb_connection
 import re
 import ast
-from konlpy.tag import Okt
+# from konlpy.tag import Okt
 
 @st.cache_data(ttl="1h")
 def _execute_cached_query_to_df(query:str) -> pd.DataFrame:
@@ -205,7 +205,7 @@ def get_instagram_data(call_store_name):
     
     query = """
         SELECT
-            store_name, search_name, label, review, tags, comments
+            store_name, search_name, label, review, tags, comments, review_tokens, comments_tokens
         FROM
             reviews.instagram_restaurants
     """
@@ -236,30 +236,15 @@ def get_instagram_data(call_store_name):
     pre_label_value = df_test['label'].value_counts() #라벨링값
     pie_label_list = [pre_label_name, pre_label_value]
 
-    # 리뷰 중 '진정성'이 있는 것들만 필터링 (이 코드에서 사용 안함)
-    # df_test_real = df_test.query("label == '진정성'")        
+    # 리뷰 중 '진정성'이 있는 것들만 필터링
+    df_test_real = df_test.query("label == '진정성'")
+    
+    ## '진정성' 리뷰의 토큰 통합(워드클라우드용)
+    all_review_tokens = [token for sublist in df_test_real['review_tokens'].dropna() for token in sublist]
+    reviewtxt_for_wordcloud = " ".join(all_review_tokens)
 
-    ## 리뷰 및 코멘트 토큰화(워드클라우드용)
-    okt = Okt()
-    stopwords = [
-        '은', '는', '이', '가', '을', '를', '과', '와', '도', '만', '으로', '로', '적', '인', '이다', '이고', '이며', '이니',
-        '수', '개', '분', '등', '고', '게', '듯', '음', '안', '것', '때', '곳', '분들', '요', '에서', '하다', '되다',
-        '데', '그냥', '네', '응', '오', '아', '그', '저', '저런', '그것', '저것', '무엇', '뭐', '때문', '일단', '나', '한',
-        '에', '의', '엔', '내', '거', '건', '랑', '푹', '님', '난', '들', '특히', '탱', '이네', '이랑', '곧', '금방', '이에요',
-        '드리다', '나다', '나고', '나니', '니', '상', '떨기', '아예', '재', '편', '인데', '스레', '들다', '벌써', '보단',
-        '급', '나면', '셈', '씩', '쯤', '함', '딱', '정말', '로서'
-    ]    # 불용어 지정
-
-    # 리뷰 텍스트 토큰화
-    joined_review_text = " ".join(df_test['review'].dropna().astype(str))
-    review_tokens = [word for word in okt.morphs(joined_review_text) if word not in stopwords and len(word) > 1]
-    # review_tokens = [word for word in okt.nouns(joined_review_text) if word not in stopwords and len(word) > 1]
-    reviewtxt_for_wordcloud = " ".join(review_tokens)
-
-    # 코멘트 텍스트 토큰화
-    joined_comments_text = " ".join(df_test['comments'].dropna().astype(str))
-    comments_tokens = [word for word in okt.morphs(joined_comments_text) if word not in stopwords and len(word) > 1]
-    # comments_tokens = [word for word in okt.nouns(joined_comments_text) if word not in stopwords and len(word) > 1]
-    commentstxt_for_wordcloud = " ".join(comments_tokens)
-
+    # '진정성' 코멘트의 토큰 통합(워드클라우드용, 참조용)
+    all_comments_token = [token for sublist in df_test_real['comments_tokens'].dropna() for token in sublist]
+    commentstxt_for_wordcloud = " ".join(all_comments_token)          
+    
     return pie_label_list, reviewtxt_for_wordcloud, commentstxt_for_wordcloud
