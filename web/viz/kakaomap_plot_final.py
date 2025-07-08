@@ -261,7 +261,7 @@ def make_store_html_and_css(store_name, url, road_address, all_rating_avg, all_r
                 color: #fee500;
                 margin-left: 10px;
             }
-            .container{
+            .box_container{
                 margin-top:5px;
                 padding: 10px;
                 border: 1px solid black;
@@ -279,7 +279,7 @@ def make_store_html_and_css(store_name, url, road_address, all_rating_avg, all_r
         <a href="{url}" id="map-link">{store_name} 상세페이지</a>
         <i class="fa-solid fa-arrow-pointer fa-2xl" id="pointer"></i>
     </div>
-    <div class="container">
+    <div class="box_container">
         <div>{road_address}</div>
         <div>{rating_html}</div>
     </div>
