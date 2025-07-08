@@ -164,7 +164,7 @@ def restaurant_detail_view():
                                                                                 reviewtxt_for_wordcloud, 
                                                                                 commentstxt_for_wordcloud)
                 if labeling_pie_fig and review_wordcloud_plot_fig:
-                    st.header(f'{click_store} 음식점 인스타그램 리뷰')
+                    #st.header(f'{click_store} 음식점 인스타그램 리뷰')
 
                     # 그래프(좌측), 워드클라우드(우측) 컬럼 생성
                     plot_col, w_cloud = st.columns([.3, .7])  #3:7 비율로 분할
