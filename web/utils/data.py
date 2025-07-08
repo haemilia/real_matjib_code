@@ -6,7 +6,7 @@ from difflib import get_close_matches
 from web.utils.database import get_duckdb_connection
 import re
 import ast
-from konlpy.tag import Okt
+#from konlpy.tag import Okt
 import json
 
 @st.cache_data(ttl="1h")

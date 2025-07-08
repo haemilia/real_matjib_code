@@ -23,7 +23,7 @@ def restaurant_detail_view():
         st.rerun() 
     col_map, col_tabs = st.columns([1, 4]) # 지도가 1/5, 상세 페이지가 4/5 차지
     with col_map:
-        st.write(f"### 선택된 음식점: {st.session_state.selected_restaurant}")
+        #st.write(f"### 선택된 음식점: {st.session_state.selected_restaurant}")
         map_df = get_map_data()
         detail_map_fig = plot_restaurants_on_map(map_df,
                                                  active_restaurant=st.session_state.selected_restaurant)
@@ -32,7 +32,7 @@ def restaurant_detail_view():
                         use_container_width=False,
                         config={'displayModeBar': False})
     with col_tabs:
-        st.write(f"#### {st.session_state.selected_restaurant}")
+        #st.write(f"#### {st.session_state.selected_restaurant}")
 
         tab_overall, tab_kakao, tab_naver, tab_insta = st.tabs(["통합",
                                                                 "카카오맵",

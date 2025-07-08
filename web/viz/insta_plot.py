@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from pathlib import Path
 from difflib import get_close_matches
 from wordcloud import WordCloud
-from konlpy.tag import Okt
+#from konlpy.tag import Okt
 from web.utils.database import download_font_for_wordcloud
 
 # def get_instagram(conn, call_store_name):
