@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from pathlib import Path
 from difflib import get_close_matches
 from wordcloud import WordCloud
-from konlpy.tag import Okt
+#from konlpy.tag import Okt
 from web.utils.database import download_font_for_wordcloud
 
 # def get_instagram(conn, call_store_name):
@@ -105,7 +105,7 @@ def plot_instagram(
     )
     labeling_pie_fig.update_layout(
         title=dict(
-            text='<b>홍보성 vs 진정성 여부</b>',    #그래프 title
+            text='<b>"진짜" 리뷰 vs "가짜" 리뷰</b>',    #그래프 title
             #그래프 위치
             xanchor='center',
             x=.5,

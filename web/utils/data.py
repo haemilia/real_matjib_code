@@ -1,3 +1,4 @@
+#%%
 import streamlit as st
 import pandas as pd
 from typing import Tuple, Any
@@ -5,8 +6,6 @@ from pyproj import CRS, Transformer
 from difflib import get_close_matches
 from web.utils.database import get_duckdb_connection
 import re
-import ast
-from konlpy.tag import Okt
 import json
 
 @st.cache_data(ttl="1h")
@@ -101,7 +100,7 @@ def get_kakaomap_data(click_store):
             l.kakaomap_id = r.kakaomap_id
     """
     df_kakaomap = _execute_cached_query_to_df(query)
-    df_kakaomap['predicted_label'] = df_kakaomap['predicted_label'].map({0:'홍보성', 1:'진정성'})
+    df_kakaomap['predicted_label'] = df_kakaomap['predicted_label'].map({0:'가짜', 1:'진짜'})
     df_kakaomap['review_date'] = pd.to_datetime(df_kakaomap['review_date']).dt.strftime('%Y-%m-%d')
     
     store_name = click_store
@@ -223,22 +222,18 @@ def get_instagram_data(call_store_name):
         if closest_matches:
             matched_store = closest_matches[0]
             df_test = df_instagram[df_instagram['search_name'] == matched_store]
-            df_test['label'] = df_test['label'].replace('일반', '진정성')
+            df_test.loc[:, "label"] = df_test['label'].map({'일반': '진짜', '홍보': '가짜'})
 
         else:
             st.warning("❗ 유사한 가게를 찾을 수 없습니다.")
             return [], [], []
-    
-    # 단순 가게명 일치검색
-    # df_test = df_instagram.query("store_name == call_store_name")
 
     #파이차트에 쓰일 변수
-    pre_label_name = list(df_test.label.unique()) #홍보/진정성
     pre_label_value = df_test['label'].value_counts() #라벨링값
-    pie_label_list = [pre_label_name, pre_label_value]
+    pie_label_list = [list(pre_label_value.index), pre_label_value.values]
 
     # 리뷰 중 '진정성'이 있는 것들만 필터링
-    df_test_real = df_test.query("label == '진정성'")
+    df_test_real = df_test.query("label == '진짜'")
     
     ## '진정성' 리뷰의 토큰 통합(워드클라우드용)
     all_review_tokens = [token for sublist in df_test_real['review_tokens'].dropna() for token in sublist]
@@ -300,3 +295,42 @@ def get_naver_detail_data(click_store):
         return None, click_store
 
     return df_store, click_store
+
+def get_naver_chart_data(call_store_name):
+    query = """
+        SELECT
+            review_text, store_id, store_naver_name, purchase_item, is_advert_label
+        FROM
+            reviews.navermap_reviews
+    """
+    df_navermap = _execute_cached_query_to_df(query)
+
+    if df_navermap.empty:
+        return None
+    
+    df_navermap['is_advert_label'] = df_navermap['is_advert_label'].map({1:'가짜', 0:'진짜'})
+
+    # call_store_name = "순대일번지"    # 테스트용 가게 이름
+    # 가장 유사한 가게명 검색 (호출명과 정확히 일치하지 않을 경우 고려)
+    matched_store_name = None
+    df_test = pd.DataFrame()
+
+    # if df_navermap:
+    store_list = df_navermap['store_naver_name'].dropna().unique().tolist()
+    closest_matches = get_close_matches(call_store_name, store_list, n=1, cutoff=0.3)
+
+    if closest_matches:
+        matched_store_name = closest_matches[0]
+        matched_store_ids = df_navermap[df_navermap['store_naver_name'] == matched_store_name]['store_id'].unique()
+        df_test = df_navermap[
+            (df_navermap['store_naver_name'] == matched_store_name) &
+            (df_navermap['store_id'].isin(matched_store_ids))
+        ].copy()
+
+    else:
+        st.warning("❗ 유사한 가게를 찾을 수 없습니다.")
+
+    if df_test.empty or df_test is None:
+        return None
+    else:
+        return df_test

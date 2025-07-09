@@ -3,7 +3,7 @@ from web.viz.restaurants_map_plot import plot_restaurants_on_map
 from web.utils.data import get_map_data
 def main_map_view():
     # --- Fetch and Plot Map Data ---
-    st.subheader("연남동 일반 음식점")
+    #st.subheader("연남동 일반 음식점")
     map_df = get_map_data() # Use the 'con' guaranteed to be live
     if not map_df.empty:
         map_figure = plot_restaurants_on_map(map_df)
