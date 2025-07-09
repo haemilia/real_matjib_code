@@ -126,7 +126,7 @@ def make_chart(pie_label_list, bar_rating_list, wordcloud_text):
     ))
     pie_fig.update_traces(textposition='inside', textinfo='percent+label')
     pie_fig.update_layout(
-        title=dict(text='<b>홍보성과 진정성 여부</b>', xanchor='center', x=.5, font=dict(size=20)),
+        title=dict(text='<b>"진짜" 리뷰 vs "가짜" 리뷰</b>', xanchor='center', x=.5, font=dict(size=20)),
         legend=dict(orientation='h', xanchor='center', x=.5, yanchor='bottom', y=-.2)
     )
 
@@ -140,7 +140,7 @@ def make_chart(pie_label_list, bar_rating_list, wordcloud_text):
             marker_color="#402424",
         ))
         bar_fig.update_layout(
-            title=dict(text='<b>진정성 리뷰 평점 분포도</b>', xanchor='center', x=.5, font=dict(size=20))
+            title=dict(text='<b>"진짜" 리뷰 평점 분포도</b>', xanchor='center', x=.5, font=dict(size=20))
         )
         bar_fig.update_xaxes(
             tickmode='array',

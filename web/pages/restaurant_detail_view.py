@@ -1,6 +1,6 @@
 import streamlit as st
 from web.viz.restaurants_map_plot import plot_restaurants_on_map
-from web.utils.data import get_map_data, get_kakaomap_data, get_instagram_data, get_naver_noun_data, get_naver_detail_data
+from web.utils.data import get_map_data, get_kakaomap_data, get_instagram_data, get_naver_noun_data, get_naver_detail_data, get_naver_chart_data
 from web.viz.kakaomap_plot_final import (
     rating_stars,
     make_chart,
@@ -12,6 +12,7 @@ from web.viz.kakaomap_plot_final import (
 from web.viz.insta_plot import plot_instagram
 from web.viz.navermap_noungraph import visualize_restaurant_nlp_insights, create_text_placeholder_chart
 from web.viz.naver_detail import get_detail, get_detail_html_css
+from web.viz.navermap_chart import navermap_draw_chart
 
 def restaurant_detail_view():
     st.write(f"# {st.session_state.selected_restaurant}")
@@ -39,8 +40,37 @@ def restaurant_detail_view():
                                                                 "네이버지도",
                                                                 "인스타그램"])
         with tab_overall:
-            st.header(f"{st.session_state.selected_restaurant}에 대한 진품명품의 총평은?")
-            st.write("어쩌구 저쩌구")
+            st.subheader('플랫폼별로 "진짜" 리뷰와 "가짜" 리뷰의 비율을 시각화한 파이차트')
+            kakao_col, naver_col, insta_col = st.columns(3)
+            with kakao_col:
+                st.subheader("카카오맵 ")
+                click_store = st.session_state.selected_restaurant
+                pie_label_list, bar_rating_list, wordcloud_text, _, _ = get_kakaomap_data(click_store)
+                if len(pie_label_list) == 0:
+                    st.info("해당 음식점에 대한 카카오맵 리뷰 데이터가 없습니다.")
+                else:
+                    pie_fig, _, _ = make_chart(pie_label_list, bar_rating_list, wordcloud_text)
+                    st.plotly_chart(pie_fig, use_container_width=True, key="overall_kakao_pie")
+            with naver_col:
+                st.subheader("네이버지도")
+                click_store = st.session_state.selected_restaurant
+                df_store_chart = get_naver_chart_data(click_store)
+                if df_store_chart is None or df_store_chart.empty:
+                    st.info("해당 음식점에 대한 네이버 리뷰 데이터가 없습니다.")
+                else:
+                    naver_labeling_pie_fig, _ = navermap_draw_chart(df_store_chart)
+                    st.plotly_chart(naver_labeling_pie_fig, use_container_width=True, key="overall_naver_pie")
+            with insta_col:
+                st.subheader("인스타그램")
+                click_store = st.session_state.selected_restaurant
+                pie_label_list, reviewtxt_for_wordcloud, commentstxt_for_wordcloud = get_instagram_data(click_store)
+                if len(pie_label_list) == 0:
+                    st.info("해당 음식점에 대한 인스타그램 리뷰 데이터가 없습니다.")
+                else:
+                    labeling_pie_fig, _, _ = plot_instagram(pie_label_list, 
+                                                            reviewtxt_for_wordcloud, 
+                                                            commentstxt_for_wordcloud)
+                    st.plotly_chart(labeling_pie_fig, use_container_width=True, key="overall_insta_pie")
         with tab_kakao:
             st.header("""카카오맵 (Kakao Map)""")
             ### ---------------------------------------------------------------------------------------------
@@ -49,7 +79,7 @@ def restaurant_detail_view():
             print("bar_rating_list:", bar_rating_list)
 
             # 값이 비어있거나 없는 경우 '없음' 출력
-            if len(pie_label_list) == 0 or len(bar_rating_list) == 0 or len(wordcloud_text) == 0:
+            if len(pie_label_list) == 0:
                 st.info('해당 음식점에 대한 카카오맵 리뷰 데이터가 없습니다.')
 
             else:
@@ -76,12 +106,12 @@ def restaurant_detail_view():
                     if bar_rating_list and wordcloud_text and real_rating_avg:  #'진정성' 리뷰가 있는 경우
                         col1, col2 = st.columns(2)
                         with col1:
-                            st.plotly_chart(pie_fig, use_container_width=True)
+                            st.plotly_chart(pie_fig, use_container_width=True, key="kakao_pie")
                         with col2:
-                            st.plotly_chart(bar_fig, use_container_width=True)
+                            st.plotly_chart(bar_fig, use_container_width=True, key="kakao_bar")
                         st.pyplot(wordcloud_fig)
                     else:   #없는 경우
-                        st.plotly_chart(pie_fig, use_container_width=True)
+                        st.plotly_chart(pie_fig, use_container_width=True, key="kakao_pie")
 
                 # #4-2. 상세페이지 컬럼
                 with detail_col:
@@ -117,9 +147,19 @@ def restaurant_detail_view():
             chart_col, detail_col = st.columns([.7, .3])
             with chart_col:
                 with st.container(border=True):
-                    st.subheader("네이버 주요 정보 요약")
-                    st.write("리뷰 진정성 비율 파이차트 + 음식 주문 막대 차트")
-                    st.plotly_chart(create_text_placeholder_chart())
+                    df_store_chart = get_naver_chart_data(click_store)
+                    if df_store_chart is None or df_store_chart.empty:
+                        st.info("해당 음식점에 대한 네이버 리뷰 요약 데이터가 없습니다.")
+                    else:
+                        naver_labeling_pie_fig, naver_bar_purchase_item_fig = navermap_draw_chart(df_store_chart)
+                        if naver_labeling_pie_fig and naver_bar_purchase_item_fig:
+                            pie_col, bar_col = st.columns(2)
+
+                            with pie_col:
+                                st.plotly_chart(naver_labeling_pie_fig, use_container_width=True, key="naver_pie")
+                            with bar_col:
+                                st.plotly_chart(naver_bar_purchase_item_fig, use_container_width=True, key="naver_bar")
+                    
 
                 st.markdown("---") # Visual separator between the two containers
 
@@ -158,7 +198,7 @@ def restaurant_detail_view():
             click_store = st.session_state.selected_restaurant
             pie_label_list, reviewtxt_for_wordcloud, commentstxt_for_wordcloud = get_instagram_data(click_store)
             if len(pie_label_list) == 0 or len(reviewtxt_for_wordcloud) == 0:
-                st.write("없음")
+                st.write("해당 음식점에 대한 인스타그램 리뷰 데이터가 없습니다.")
             else:
                 labeling_pie_fig, review_wordcloud_plot_fig, _ = plot_instagram(pie_label_list, 
                                                                                 reviewtxt_for_wordcloud, 
@@ -171,7 +211,7 @@ def restaurant_detail_view():
 
                     # 파이차트
                     with plot_col:
-                        st.plotly_chart(labeling_pie_fig, use_container_width=True)
+                        st.plotly_chart(labeling_pie_fig, use_container_width=True, key="insta_pie")
                     
                     # 리뷰 워드클라우드
                     with w_cloud:

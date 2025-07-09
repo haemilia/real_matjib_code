@@ -105,7 +105,7 @@ def plot_instagram(
     )
     labeling_pie_fig.update_layout(
         title=dict(
-            text='<b>홍보성 vs 진정성 여부</b>',    #그래프 title
+            text='<b>"진짜" 리뷰 vs "가짜" 리뷰</b>',    #그래프 title
             #그래프 위치
             xanchor='center',
             x=.5,
